@@ -7,6 +7,7 @@ import {
   DEFAULT_PAINT_SIZE, MIN_PAINT_SIZE, MAX_PAINT_SIZE,
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
+  DEFAULT_ARROW_SIZE, MIN_ARROW_SIZE, MAX_ARROW_SIZE,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
 } from './_styles.js';
 
@@ -222,6 +223,16 @@ export function createSettings(settingsArea, {
       renderCanvas();
       if (doEmit) emit();
     });
+    if (activeTool === "arrow") {
+      const arrowSizeVal = ts.arrow_size ?? DEFAULT_ARROW_SIZE;
+      _buildSizeSlider("Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE, arrowSizeVal, (sz, doEmit) => {
+        const s = getState();
+        s.toolSettings.arrow.arrow_size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas();
+        if (doEmit) emit();
+      });
+    }
     const color = ts.color || DEFAULT_COLOR;
     _buildColorSwatch(color, (col, doEmit) => {
       const s = getState();
@@ -338,6 +349,17 @@ export function createSettings(settingsArea, {
         if (doEmit) emit();
       });
     }
+    if (ann.type === "arrow") {
+      const arrowSizeVal = ann.arrow_size ?? DEFAULT_ARROW_SIZE;
+      _buildSizeSlider("Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE, arrowSizeVal, (sz, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_size: sz }));
+        const s = getState();
+        s.toolSettings.arrow.arrow_size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas();
+        if (doEmit) emit();
+      });
+    }
 
     _buildColorSwatch(color, (col, doEmit) => {
       applySingleUpdate(ann.id, (a) => {
@@ -387,9 +409,10 @@ export function createSettings(settingsArea, {
     const anns = effectiveAnnotations().filter((a) => selIds.includes(a.id));
     // Capture original sizes when the panel is built; slider applies ratio to these originals
     const origSizes = {};
+    const origArrowSizes = {};
     for (const a of anns) {
       if (a.type === "paint") origSizes[a.id] = a.sizeScale ?? 1;
-      else if (a.type === "arrow") origSizes[a.id] = a.width ?? 3;
+      else if (a.type === "arrow") { origSizes[a.id] = a.width ?? 3; origArrowSizes[a.id] = a.arrow_size ?? DEFAULT_ARROW_SIZE; }
       else if (a.type === "rect" || a.type === "ellipse") origSizes[a.id] = a.width ?? DEFAULT_SHAPE_WIDTH;
     }
     _buildSizeSlider("Scale %", 25, 400, 100, (val, doEmit) => {
@@ -397,7 +420,7 @@ export function createSettings(settingsArea, {
       const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
         if (a.type === "paint") return { ...a, sizeScale: (origSizes[a.id] ?? 1) * ratio };
         if (a.type === "text") return a;
-        if (a.type === "arrow") return { ...a, width: Math.max(1, (origSizes[a.id] ?? 3) * ratio) };
+        if (a.type === "arrow") return { ...a, width: Math.max(1, (origSizes[a.id] ?? 3) * ratio), arrow_size: Math.max(5, (origArrowSizes[a.id] ?? DEFAULT_ARROW_SIZE) * ratio) };
         if (a.type === "rect" || a.type === "ellipse") return { ...a, width: Math.max(1, (origSizes[a.id] ?? DEFAULT_SHAPE_WIDTH) * ratio) };
         return a;
       });
@@ -405,6 +428,19 @@ export function createSettings(settingsArea, {
       renderCanvas();
       if (doEmit) emit();
     });
+    const arrowAnns = anns.filter((a) => a.type === "arrow");
+    if (arrowAnns.length > 0) {
+      const firstArrowSize = arrowAnns[0].arrow_size ?? DEFAULT_ARROW_SIZE;
+      _buildSizeSlider("Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE, firstArrowSize, (sz, doEmit) => {
+        const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
+          if (a.type === "arrow") return { ...a, arrow_size: sz };
+          return a;
+        });
+        setCurrentValue({ ...getState().currentValue, annotations, overrides });
+        renderCanvas();
+        if (doEmit) emit();
+      });
+    }
     let firstColor = DEFAULT_COLOR;
     for (const a of anns) {
       if (a.type === "paint" && a.strokes?.[0]) { firstColor = a.strokes[0].color; break; }

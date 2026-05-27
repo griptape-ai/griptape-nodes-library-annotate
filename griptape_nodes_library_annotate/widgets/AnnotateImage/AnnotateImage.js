@@ -8,7 +8,7 @@ import {
   DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, DEFAULT_COLOR,
   DEFAULT_PAINT_SIZE, MIN_PAINT_SIZE, MAX_PAINT_SIZE,
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
-  DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
+  DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH, DEFAULT_ARROW_SIZE,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
   SEL_COLOR, SEL_COLOR_RGB, IMP_COLOR, IMP_COLOR_RGB,
   FRAME_FILL_OPACITY, FRAME_BORDER_OPACITY, FRAME_CORNER_OPACITY,
@@ -516,7 +516,7 @@ export default function AnnotateImageSimple(container, props) {
       const ts = toolSettings.arrow;
       drawArrowLine(
         currentArrow.x1, currentArrow.y1, currentArrow.x2, currentArrow.y2,
-        ts.color || DEFAULT_COLOR, ts.width || DEFAULT_ARROW_WIDTH,
+        ts.color || DEFAULT_COLOR, ts.width || DEFAULT_ARROW_WIDTH, ts.arrow_size ?? DEFAULT_ARROW_SIZE,
         null, null, null, null,
         ts.has_start_arrow ?? false, ts.has_end_arrow ?? true, ts.taper ?? false
       );
@@ -1676,6 +1676,7 @@ export default function AnnotateImageSimple(container, props) {
           cp2x: arr.x1 + (cx - arr.x1) * 2 / 3, cp2y: arr.y1 + (cy - arr.y1) * 2 / 3,
           color: ts.color,
           width: ts.width,
+          arrow_size: ts.arrow_size ?? DEFAULT_ARROW_SIZE,
           has_start_arrow: ts.has_start_arrow ?? false,
           has_end_arrow: ts.has_end_arrow ?? true,
           is_bezier: ts.is_bezier ?? false,

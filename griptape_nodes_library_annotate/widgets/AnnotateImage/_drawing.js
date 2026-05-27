@@ -4,7 +4,7 @@
 
 import { paintCenter, defaultCps, naturalBounds, getTransformedCorners } from './_geometry.js';
 import {
-  DEFAULT_COLOR, DEFAULT_PAINT_SIZE, DEFAULT_ARROW_WIDTH, DEFAULT_TEXT_SIZE, MIN_TEXT_SIZE, DEFAULT_SHAPE_WIDTH,
+  DEFAULT_COLOR, DEFAULT_PAINT_SIZE, DEFAULT_ARROW_WIDTH, DEFAULT_ARROW_SIZE, DEFAULT_TEXT_SIZE, MIN_TEXT_SIZE, DEFAULT_SHAPE_WIDTH,
   SEL_COLOR_RGB, HOVER_OPACITY, HANDLE_FILL, HANDLE_STROKE_OPACITY, CP_LINE_OPACITY,
   LINE_WIDTH_PRIMARY, LINE_WIDTH_SECONDARY,
   HANDLE_RADIUS, CP_HANDLE_RADIUS,
@@ -110,7 +110,7 @@ export function createDrawing(getState) {
     ctx.restore();
   }
 
-  function drawArrowLine(x1, y1, x2, y2, color, width, cp1x, cp1y, cp2x, cp2y, hasStartArrow, hasEndArrow, taper) {
+  function drawArrowLine(x1, y1, x2, y2, color, width, arrowSize, cp1x, cp1y, cp2x, cp2y, hasStartArrow, hasEndArrow, taper) {
     const { ctx } = getState();
     if (cp1x == null) cp1x = x1 + (x2 - x1) / 3;
     if (cp1y == null) cp1y = y1 + (y2 - y1) / 3;
@@ -118,8 +118,9 @@ export function createDrawing(getState) {
     if (cp2y == null) cp2y = y1 + (y2 - y1) * 2 / 3;
     if (hasEndArrow == null) hasEndArrow = true;
     const w = Math.max(1, width);
-    const head = Math.max(15, w * 4);
-    const setback = head * Math.cos(Math.PI / 6);
+    const aLen = Math.max(5, arrowSize ?? DEFAULT_ARROW_SIZE);
+    const halfW = Math.max(w * 2, aLen * 0.4);
+    const setback = aLen;
 
     let endAngle = 0, startAngle = 0;
     if (hasEndArrow) {
@@ -161,7 +162,7 @@ export function createDrawing(getState) {
       for (let i = 0; i <= N; i++) {
         const t = i / N, mt = 1 - t;
         const spd = spds[i];
-        const hw = (minSpd / spd) * w / 2;
+        const hw = Math.sqrt(minSpd / spd) * w / 2;
         const dvx = 3*(mt**2*(cp1x-lx1) + 2*mt*t*(cp2x-cp1x) + t**2*(lx2-cp2x));
         const dvy = 3*(mt**2*(cp1y-ly1) + 2*mt*t*(cp2y-cp1y) + t**2*(ly2-cp2y));
         const [px, py] = spd < 0.001 ? [0, hw] : [-dvy / spd * hw, dvx / spd * hw];
@@ -185,17 +186,21 @@ export function createDrawing(getState) {
     }
 
     if (hasEndArrow) {
+      const bx = x2 - aLen * Math.cos(endAngle), by = y2 - aLen * Math.sin(endAngle);
+      const px = -Math.sin(endAngle), py = Math.cos(endAngle);
       ctx.beginPath();
       ctx.moveTo(x2, y2);
-      ctx.lineTo(x2 - head * Math.cos(endAngle - Math.PI/6), y2 - head * Math.sin(endAngle - Math.PI/6));
-      ctx.lineTo(x2 - head * Math.cos(endAngle + Math.PI/6), y2 - head * Math.sin(endAngle + Math.PI/6));
+      ctx.lineTo(bx + halfW * px, by + halfW * py);
+      ctx.lineTo(bx - halfW * px, by - halfW * py);
       ctx.closePath(); ctx.fill();
     }
     if (hasStartArrow) {
+      const bx = x1 - aLen * Math.cos(startAngle), by = y1 - aLen * Math.sin(startAngle);
+      const px = -Math.sin(startAngle), py = Math.cos(startAngle);
       ctx.beginPath();
       ctx.moveTo(x1, y1);
-      ctx.lineTo(x1 - head * Math.cos(startAngle - Math.PI/6), y1 - head * Math.sin(startAngle - Math.PI/6));
-      ctx.lineTo(x1 - head * Math.cos(startAngle + Math.PI/6), y1 - head * Math.sin(startAngle + Math.PI/6));
+      ctx.lineTo(bx + halfW * px, by + halfW * py);
+      ctx.lineTo(bx - halfW * px, by - halfW * py);
       ctx.closePath(); ctx.fill();
     }
     ctx.restore();
@@ -210,6 +215,7 @@ export function createDrawing(getState) {
     const cp2x = isBezier ? cps.cp2x : null;
     const cp2y = isBezier ? cps.cp2y : null;
     drawArrowLine(ann.x1, ann.y1, ann.x2, ann.y2, ann.color || DEFAULT_COLOR, ann.width || DEFAULT_ARROW_WIDTH,
+      ann.arrow_size ?? DEFAULT_ARROW_SIZE,
       cp1x, cp1y, cp2x, cp2y, ann.has_start_arrow ?? false, ann.has_end_arrow ?? true, ann.taper ?? false);
     if (selected) {
       const r = HANDLE_RADIUS / displayScale;
