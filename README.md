@@ -39,7 +39,7 @@ Drop it into a flow, connect an incoming image (or leave it blank to start fresh
 | Rectangle | `R` | Box in a region of interest |
 | Ellipse | `O` | Circle or oval callouts |
 
-![Side-by-side examples of each drawing tool in use on an image: a freehand paint stroke, a text label reading "fix this", an arrow pointing at a subject, a rectangle boxing a region, and an ellipse circling a detail.](images/annotate_image_drawing_tools.png)
+![Example of an annotation with a drawing tool used](images/annotate_image_drawing_tools.png)
 
 ### Navigation Tools
 
@@ -62,36 +62,53 @@ Once you've placed annotations, you can keep them organized:
 
 ### Chaining Annotation Nodes
 
-You can feed the output of one **Annotate Image** node into the input of another. Upstream annotations arrive as a separate layer alongside your own — useful for building up notes in stages or passing reviewed work further down the flow. Each incoming annotation can be independently overridden or reset.
+You can feed the output of one **Annotate Image** node into the input of another. Upstream annotations arrive as a separate layer alongside your own, and each one can be independently overridden or reset.
 
-![Two Annotate Image nodes connected in sequence on the canvas. The first node has red paint strokes and arrows; the second node's canvas shows both those upstream annotations and new blue text labels added on top, with the header bar showing "Reset all overrides" available.](images/annotate_image_chained.png)
+A practical use for this is **annotation templates** — a first node holds a standard set of labels (shot number, scene, camera, notes fields) that gets stamped onto every image that flows through it. A second node then receives that template layer and lets you fill in the specifics for each individual shot without touching the template itself.
+
+![Two Annotate Image nodes connected in sequence. The first node contains a reusable shot description template — text labels for "Shot", "Scene", "Camera", and "Notes" arranged in a consistent layout. The second node inherits that template layer and adds image-specific annotations on top, with the header bar showing "Reset all overrides" so the template can be restored if needed.](images/annotate_image_chained.png)
+
+### Saving and Loading Annotations
+
+The annotations value on the node is plain JSON, which means you can save it to disk and reload it in a later session — or share it with someone else who can drop it straight into their own **Annotate Image** node.
+
+You can also **build annotation sets programmatically** using a **JSON Input** node wired into the annotations input. This is useful for generating consistent labels from data, pre-populating a shot template from a spreadsheet, or scripting repeatable overlays without drawing anything by hand.
+
+The annotations format is a JSON object with an `annotations` array. Each entry describes one mark:
+
+```json
+{
+  "annotations": [
+    {
+      "id": "text-1",
+      "type": "text",
+      "text": "Shot Description",
+      "x": 10,
+      "y": 10,
+      "rotation": 0,
+      "color": "#96fdfb",
+      "font_size": 48,
+      "text_align": "left",
+      "bg_color": "#4f4f4fa6"
+    }
+  ]
+}
+```
+
+Every annotation has an `id` (unique string), a `type` (`text`, `arrow`, `rect`, `ellipse`, or `paint`), and type-specific properties for position, color, size, and style. You can hand-author these in a JSON Input node, generate them from a script, or copy them out of an existing **Annotate Image** node to use as a starting point.
+
+![A Griptape Nodes canvas showing a JSON Input node whose output is wired into the annotations input of an Annotate Image node. The JSON Input contains a shot description template with text annotations for "Shot", "Scene", "Camera", and "Notes". The Annotate Image canvas displays those labels already placed, ready to have an image connected and the fields filled in.](images/annotate_image_json_input.png)
+
 
 ---
 
 ## Installation
 
-1. **Download the library** to your machine. A `libraries` folder inside your Griptape Nodes workspace is a good home for it:
+1. In Griptape Nodes, open **Manage → Library Management**
+2. Paste in the repository URL: `https://github.com/griptape-ai/griptape-nodes-library-annotate.git`
+3. Click **Download**
 
-   **Option A: Download ZIP**
-
-   - Click the green **Code** button → **Download ZIP**
-   - Unzip the file and move the folder to your library location
-
-   **Option B: Using Git**
-
-   ```bash
-   cd "$(gtn config show workspace_directory)"
-   git clone https://github.com/griptape-ai/griptape-nodes-library-annotate.git
-   ```
-
-2. **Register the library** in Griptape Nodes:
-
-   - Go to **Settings → Libraries**
-   - Click **+ Add Library**
-   - Enter the path to `griptape-nodes-library.json` inside the cloned folder
-   - Close the settings panel and click **Refresh Libraries**
-
-3. **Find the node** — look for **Annotate Image** in the `image` category in the node picker.
+That's it. Once installed, look for **Annotate Image** in the `image` category in the node picker.
 
 ---
 
