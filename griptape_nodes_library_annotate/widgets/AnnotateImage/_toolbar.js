@@ -12,7 +12,7 @@
 //     │ [settingsArea · · · left]  [objectActionsEl]  [viewControls ▶] │
 //     └──────────────────────────────────────────────────────────────────┘
 //     settingsArea    — per-tool / per-annotation settings, populated by _settings.js
-//     objectActionsEl — object editing actions (group, layers, delete, …), populated by _hud.js
+//     objectActionsEl — object editing actions (group, layers, delete, …), populated by _object_actions.js
 //     viewControls    — fit-to-canvas button + expand-to-modal button (owned here)
 //
 // createToolbar(deps) →
@@ -79,7 +79,7 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
   headerBar.appendChild(settingsArea);
 
   // Right section (inner-left): object actions (group, layers, delete, reset)
-  // — content managed by _hud.js; hidden when nothing is selected
+  // — content managed by _object_actions.js; hidden when nothing is selected
   const objectActionsEl = document.createElement("div");
   objectActionsEl.className = "ais-hud";
   objectActionsEl.style.cssText = "display:none;align-items:center;gap:2px;flex-shrink:0;margin-right:4px;";

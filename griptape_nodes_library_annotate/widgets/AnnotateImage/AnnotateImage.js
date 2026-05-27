@@ -30,7 +30,7 @@ import { createDrawing } from './_drawing.js';
 import { createTooltip } from './_tooltip.js';
 import { setupHotkeys } from './_hotkeys.js';
 import { createSettings } from './_settings.js';
-import { createHud, expandGroupSelection } from './_hud.js';
+import { createHud, expandGroupSelection } from './_object_actions.js';
 import { createToolbar } from './_toolbar.js';
 
 // ── main widget ───────────────────────────────────────────────────────────────
