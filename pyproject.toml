@@ -1,8 +1,8 @@
 [project]
-name = "example_nodes_template"
+name = "griptape_nodes_library_annotate"
 version = "0.1.0"
-description = "Template for Users to create Custom Libraries and Nodes"
-authors = [{ name = "Your Name", email = "you@example.com" }]
+description = "Media annotation nodes for Griptape Nodes"
+authors = [{ name = "Jason Schleifer", email = "jason.schleifer@gmail.com" }]
 readme = "README.md"
 requires-python = "~=3.12.0"
 dependencies = ["griptape-nodes"]
