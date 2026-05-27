@@ -330,8 +330,9 @@ export function createHud(el, {
     const selIds = currentValue.selected_ids || [];
     const hasSelection = activeTool === "select" && selIds.length > 0;
     const hasAnyAnnotations = effectiveAnnotations().length > 0;
+    const hasOverrides = _canResetAll();
 
-    if (!hasAnyAnnotations && !hasSelection) { el.style.display = "none"; return; }
+    if (!hasAnyAnnotations && !hasSelection && !hasOverrides) { el.style.display = "none"; return; }
 
     el.innerHTML = "";
 
@@ -364,16 +365,16 @@ export function createHud(el, {
     // Delete all — always visible when annotations exist, regardless of selection
     _hudBtn(ACTION_DESCS.find((d) => d.id === "deleteAll"), "danger");
 
-    if (hasSelection) {
-      // Reset overrides — only when applicable
-      if (_canResetSelected()) {
-        _hudSep();
-        _hudBtn(ACTION_DESCS.find((d) => d.id === "resetSelected"), "imp");
-      }
-      if (_canResetAll()) {
-        _hudSep();
-        _hudBtn(ACTION_DESCS.find((d) => d.id === "resetAll"), "imp");
-      }
+    // Reset selected — only when a single imported annotation with overrides is selected
+    if (hasSelection && _canResetSelected()) {
+      _hudSep();
+      _hudBtn(ACTION_DESCS.find((d) => d.id === "resetSelected"), "imp");
+    }
+
+    // Reset all overrides — visible whenever any overrides exist, regardless of selection
+    if (_canResetAll()) {
+      _hudSep();
+      _hudBtn(ACTION_DESCS.find((d) => d.id === "resetAll"), "imp");
     }
 
     el.style.display = "flex";
