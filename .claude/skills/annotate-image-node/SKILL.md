@@ -239,6 +239,8 @@ Draw functions mirror the JS render exactly:
 
 Color parsing via `griptape_nodes_library_annotate.utils.color_utils.parse_color_to_rgba`.
 
+> **IMPORTANT — JS/Python parity rule:** Any change to how an annotation type is drawn in `_drawing.js` **must** be mirrored in the corresponding `_draw_<type>()` method in `annotate_image.py`, and vice versa. The JS widget is the live preview; Python is the final render — they must produce identical output. This includes geometry formulas, new annotation fields, and math fixes (e.g. taper, arrowhead size).
+
 ---
 
 ## Adding a New Annotation Type

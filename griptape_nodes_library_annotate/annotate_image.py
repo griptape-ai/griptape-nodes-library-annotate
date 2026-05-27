@@ -286,12 +286,13 @@ class AnnotateImage(DataNode):
         cp2y = float(ann.get("cp2y", y1 + (y2 - y1) * 2 / 3))
         color = self._parse_color(ann.get("color", "#ff0000"))
         w = max(1.0, float(ann.get("width", 8)))
+        a_len = max(5.0, float(ann.get("arrow_size", 20)))
+        half_w = max(w * 2, a_len * 0.4)
         has_end_arrow = bool(ann.get("has_end_arrow", True))
         has_start_arrow = bool(ann.get("has_start_arrow", False))
         taper = bool(ann.get("taper", False))
 
-        head = max(15.0, w * 4)
-        setback = head * math.cos(math.pi / 6)
+        setback = a_len
 
         # Arrowhead angles from tangent at endpoints
         end_angle = start_angle = 0.0
@@ -341,24 +342,24 @@ class AnnotateImage(DataNode):
             for i in range(n + 1):
                 bx, by = pts[i]
                 dvx, dvy, spd = tangents[i]
-                hw = (min_spd / spd) * w / 2
+                hw = math.sqrt(min_spd / spd) * w / 2
                 px, py = (-dvy / spd * hw, dvx / spd * hw)
                 left_pts.append((bx + px, by + py))
                 right_pts.append((bx - px, by - py))
             polygon = left_pts + list(reversed(right_pts))
             draw.polygon([(int(x), int(y)) for x, y in polygon], fill=color)
 
-        # Arrowheads
+        # Arrowheads — length controlled by a_len, base width by half_w
         if has_end_arrow:
-            tip = (x2, y2)
-            left = (x2 - head * math.cos(end_angle - math.pi / 6), y2 - head * math.sin(end_angle - math.pi / 6))
-            right = (x2 - head * math.cos(end_angle + math.pi / 6), y2 - head * math.sin(end_angle + math.pi / 6))
-            draw.polygon([tip, left, right], fill=color)
+            bx = x2 - a_len * math.cos(end_angle)
+            by = y2 - a_len * math.sin(end_angle)
+            px, py = -math.sin(end_angle), math.cos(end_angle)
+            draw.polygon([(x2, y2), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color)
         if has_start_arrow:
-            tip = (x1, y1)
-            left = (x1 - head * math.cos(start_angle - math.pi / 6), y1 - head * math.sin(start_angle - math.pi / 6))
-            right = (x1 - head * math.cos(start_angle + math.pi / 6), y1 - head * math.sin(start_angle + math.pi / 6))
-            draw.polygon([tip, left, right], fill=color)
+            bx = x1 - a_len * math.cos(start_angle)
+            by = y1 - a_len * math.sin(start_angle)
+            px, py = -math.sin(start_angle), math.cos(start_angle)
+            draw.polygon([(x1, y1), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color)
 
     def _draw_rect(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
         x = float(ann.get("x", 0))
