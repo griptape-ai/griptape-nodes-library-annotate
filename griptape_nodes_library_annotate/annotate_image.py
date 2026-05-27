@@ -30,7 +30,14 @@ def _default_annotation_data() -> dict:
         "tool_settings": {
             "paint": {"color": "#ff0000", "size": 8},
             "text": {"color": "#ff0000", "font_size": 48},
-            "arrow": {"color": "#ff0000", "width": 8, "has_start_arrow": False, "has_end_arrow": True, "is_bezier": False, "taper": False},
+            "arrow": {
+                "color": "#ff0000",
+                "width": 8,
+                "has_start_arrow": False,
+                "has_end_arrow": True,
+                "is_bezier": False,
+                "taper": False,
+            },
             "rect": {"color": "#ff0000", "width": 8, "fill_color": ""},
             "ellipse": {"color": "#ff0000", "width": 8, "fill_color": ""},
         },
@@ -48,10 +55,10 @@ class AnnotateImage(DataNode):
                 default_value=None,
                 tooltip="Input image to annotate",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
-                hide_property=True
+                hide_property=True,
             )
         )
-        
+
         self.add_parameter(
             ParameterDict(
                 name="input_annotation_data",
@@ -77,13 +84,11 @@ class AnnotateImage(DataNode):
                 name="output_image",
                 tooltip="Image with annotations composited",
                 allowed_modes={ParameterMode.OUTPUT},
-                hide_property=True
+                hide_property=True,
             )
         )
 
-        self._output_file = ProjectFileParameter(
-            node=self, name="output_file", default_filename="annotated.png"
-        )
+        self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="annotated.png")
         self._output_file.add_parameter()
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -105,9 +110,7 @@ class AnnotateImage(DataNode):
         except Exception:
             resolved = str(raw)
         try:
-            result = GriptapeNodes.handle_request(
-                CreateStaticFileDownloadUrlFromPathRequest(file_path=resolved)
-            )
+            result = GriptapeNodes.handle_request(CreateStaticFileDownloadUrlFromPathRequest(file_path=resolved))
             if isinstance(result, CreateStaticFileDownloadUrlResultSuccess):
                 return resolved, result.url
         except Exception:
@@ -172,8 +175,10 @@ class AnnotateImage(DataNode):
         max_x = max_y = float("-inf")
         for stroke in ann.get("strokes", []):
             for pt in stroke.get("points", []):
-                min_x = min(min_x, pt[0]); min_y = min(min_y, pt[1])
-                max_x = max(max_x, pt[0]); max_y = max(max_y, pt[1])
+                min_x = min(min_x, pt[0])
+                min_y = min(min_y, pt[1])
+                max_x = max(max_x, pt[0])
+                max_y = max(max_y, pt[1])
         if math.isinf(min_x):
             return 0.0, 0.0
         return (min_x + max_x) / 2, (min_y + max_y) / 2
@@ -264,7 +269,9 @@ class AnnotateImage(DataNode):
 
         degrees = -math.degrees(rotation)
         rotated = temp.rotate(
-            degrees, resample=Image.Resampling.BICUBIC, expand=False,
+            degrees,
+            resample=Image.Resampling.BICUBIC,
+            expand=False,
             center=(x + rot_pad, y + rot_pad),
         )
         cropped = rotated.crop((rot_pad, rot_pad, rot_pad + overlay.width, rot_pad + overlay.height))
@@ -296,8 +303,8 @@ class AnnotateImage(DataNode):
             start_angle = math.atan2(dy, dx) if math.hypot(dx, dy) > 0.1 else math.atan2(y1 - y2, x1 - x2)
 
         # Pull endpoints back to arrowhead base
-        lx2 = x2 - setback * math.cos(end_angle)   if has_end_arrow   else x2
-        ly2 = y2 - setback * math.sin(end_angle)   if has_end_arrow   else y2
+        lx2 = x2 - setback * math.cos(end_angle) if has_end_arrow else x2
+        ly2 = y2 - setback * math.sin(end_angle) if has_end_arrow else y2
         lx1 = x1 - setback * math.cos(start_angle) if has_start_arrow else x1
         ly1 = y1 - setback * math.sin(start_angle) if has_start_arrow else y1
 
@@ -307,10 +314,10 @@ class AnnotateImage(DataNode):
         for i in range(n + 1):
             t = i / n
             mt = 1 - t
-            bx = mt**3*lx1 + 3*mt**2*t*cp1x + 3*mt*t**2*cp2x + t**3*lx2
-            by = mt**3*ly1 + 3*mt**2*t*cp1y + 3*mt*t**2*cp2y + t**3*ly2
-            dvx = 3*(mt**2*(cp1x-lx1) + 2*mt*t*(cp2x-cp1x) + t**2*(lx2-cp2x))
-            dvy = 3*(mt**2*(cp1y-ly1) + 2*mt*t*(cp2y-cp1y) + t**2*(ly2-cp2y))
+            bx = mt**3 * lx1 + 3 * mt**2 * t * cp1x + 3 * mt * t**2 * cp2x + t**3 * lx2
+            by = mt**3 * ly1 + 3 * mt**2 * t * cp1y + 3 * mt * t**2 * cp2y + t**3 * ly2
+            dvx = 3 * (mt**2 * (cp1x - lx1) + 2 * mt * t * (cp2x - cp1x) + t**2 * (lx2 - cp2x))
+            dvy = 3 * (mt**2 * (cp1y - ly1) + 2 * mt * t * (cp2y - cp1y) + t**2 * (ly2 - cp2y))
             spd = math.hypot(dvx, dvy)
             pts.append((bx, by))
             speeds.append(max(spd, 0.001))
@@ -344,13 +351,13 @@ class AnnotateImage(DataNode):
         # Arrowheads
         if has_end_arrow:
             tip = (x2, y2)
-            left = (x2 - head * math.cos(end_angle - math.pi/6), y2 - head * math.sin(end_angle - math.pi/6))
-            right = (x2 - head * math.cos(end_angle + math.pi/6), y2 - head * math.sin(end_angle + math.pi/6))
+            left = (x2 - head * math.cos(end_angle - math.pi / 6), y2 - head * math.sin(end_angle - math.pi / 6))
+            right = (x2 - head * math.cos(end_angle + math.pi / 6), y2 - head * math.sin(end_angle + math.pi / 6))
             draw.polygon([tip, left, right], fill=color)
         if has_start_arrow:
             tip = (x1, y1)
-            left = (x1 - head * math.cos(start_angle - math.pi/6), y1 - head * math.sin(start_angle - math.pi/6))
-            right = (x1 - head * math.cos(start_angle + math.pi/6), y1 - head * math.sin(start_angle + math.pi/6))
+            left = (x1 - head * math.cos(start_angle - math.pi / 6), y1 - head * math.sin(start_angle - math.pi / 6))
+            right = (x1 - head * math.cos(start_angle + math.pi / 6), y1 - head * math.sin(start_angle + math.pi / 6))
             draw.polygon([tip, left, right], fill=color)
 
     def _draw_rect(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
