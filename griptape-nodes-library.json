@@ -42,11 +42,8 @@
                     "draw",
                     "arrows"
                 ],
-                "properties": [
-                    {
-                        "type": "production_status",
-                        "status": "ALPHA"
-                    }
+                "declarations": [
+                    { "type": "lifecycle_stage", "stage": "ALPHA" }
                 ]
             }
         }
