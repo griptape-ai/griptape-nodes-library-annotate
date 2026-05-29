@@ -354,12 +354,16 @@ class AnnotateImage(DataNode):
             bx = x2 - a_len * math.cos(end_angle)
             by = y2 - a_len * math.sin(end_angle)
             px, py = -math.sin(end_angle), math.cos(end_angle)
-            draw.polygon([(x2, y2), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color)
+            draw.polygon(
+                [(x2, y2), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color
+            )
         if has_start_arrow:
             bx = x1 - a_len * math.cos(start_angle)
             by = y1 - a_len * math.sin(start_angle)
             px, py = -math.sin(start_angle), math.cos(start_angle)
-            draw.polygon([(x1, y1), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color)
+            draw.polygon(
+                [(x1, y1), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color
+            )
 
     def _draw_rect(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
         x = float(ann.get("x", 0))
