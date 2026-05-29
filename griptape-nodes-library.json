@@ -43,7 +43,7 @@
                     "arrows"
                 ],
                 "declarations": [
-                    { "type": "lifecycle_stage", "stage": "ALPHA" }
+                    { "type": "lifecycle_stage", "stage": "BETA" }
                 ]
             }
         }
