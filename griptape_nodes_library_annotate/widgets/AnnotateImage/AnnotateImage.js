@@ -1281,7 +1281,7 @@ export default function AnnotateImageSimple(container, props) {
       const baseSize = toolSettings.paint.size;
       const usePressure = (toolSettings.paint.pressure ?? false) && e.pointerType !== "mouse";
       const pMin = toolSettings.paint.pressureMin ?? 1;
-      const sz = usePressure ? pMin + e.pressure * (baseSize - pMin) : baseSize;
+      const sz = usePressure ? pMin + (e.pressure ** 2) * (baseSize - pMin) : baseSize;
       currentStroke = { color: toolSettings.paint.color, size: baseSize, points: [[cx, cy, sz]] };
       lastPtTime = performance.now(); lastPtX = cx; lastPtY = cy; velSmoothed = 0;
       // Draw initial dot directly without a full re-render
