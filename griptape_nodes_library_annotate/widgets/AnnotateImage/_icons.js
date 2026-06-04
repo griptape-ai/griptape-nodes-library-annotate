@@ -12,6 +12,7 @@ export const ICON_PATHS = {
   trash:   `<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>`,
   bezier:  `<circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M5 17A12 12 0 0 1 17 5"/>`,
   taper:    `<circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M5 17 C5 10 8 5 15 5 L19 5 C13 5 5 10 5 17 Z" fill="currentColor" stroke="none"/>`,
+  pressure: `<circle cx="12" cy="3" r="1.5" fill="currentColor" stroke="none"/><path d="M10 5 C8 8 5 12 4 20 L20 20 C19 12 16 8 14 5 Z" fill="currentColor" stroke="none"/>`,
   expand:   `<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>`,
   contract:     `<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>`,
   "align-left":   `<path d="M21 5H3"/><path d="M15 12H3"/><path d="M17 19H3"/>`,
