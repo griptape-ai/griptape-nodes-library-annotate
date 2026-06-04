@@ -92,6 +92,7 @@ export default function AnnotateImageSimple(container, props) {
   let currentEllipse = null;
   let dragState = null;
   let lastPtTime = 0, lastPtX = 0, lastPtY = 0, velSmoothed = 0;
+  let paintCursorPos = null;
 
   // text edit state
   let textInput = null;
@@ -275,6 +276,7 @@ export default function AnnotateImageSimple(container, props) {
     if (isAltHeld) return "grab";
     if (activeTool === "select") return "default";
     if (activeTool === "hand") return "grab";
+    if (activeTool === "paint") return "none";
     return "crosshair";
   }
 
@@ -567,6 +569,21 @@ export default function AnnotateImageSimple(container, props) {
       ctx.lineWidth = LINE_WIDTH_SECONDARY / displayScale;
       ctx.setLineDash(DASH_LASSO.map((v) => v / displayScale));
       ctx.strokeRect(mx1, my1, mw, mh);
+      ctx.restore();
+    }
+
+    // Paint brush cursor ring — drawn last so it's always on top
+    if (activeTool === "paint" && paintCursorPos) {
+      const [hx, hy] = paintCursorPos;
+      const r = (toolSettings.paint.size ?? DEFAULT_PAINT_SIZE) / 2;
+      const lw = 1 / displayScale;
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineWidth = lw * 2;
+      ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = "rgba(0,0,0,0.7)";
+      ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
   }
@@ -985,7 +1002,9 @@ export default function AnnotateImageSimple(container, props) {
   canvas.addEventListener("pointercancel", onPointerUp);
   canvas.addEventListener("mousemove", onMouseHover);
   canvas.addEventListener("mouseleave", () => {
-    if (hoverId || hoverGroupId) { hoverId = null; hoverGroupId = null; renderCanvas(); }
+    const needsRender = hoverId || hoverGroupId || paintCursorPos;
+    hoverId = null; hoverGroupId = null; paintCursorPos = null;
+    if (needsRender) renderCanvas();
   });
 
   // Track on wrapper (not container) so hotkeys still fire when widget is reparented into the modal.
@@ -1406,6 +1425,7 @@ export default function AnnotateImageSimple(container, props) {
     const [cx, cy] = screenToCanvas(e);
 
     if (activeTool === "paint" && currentStroke) {
+      paintCursorPos = [cx, cy];
       const pts = currentStroke.points;
       const last = pts[pts.length - 1];
       if (Math.hypot(cx - last[0], cy - last[1]) < 2) return; // skip micro-moves
@@ -1872,7 +1892,12 @@ export default function AnnotateImageSimple(container, props) {
       hoverGroupId = null;
     }
     canvas.style.cursor = _cursorForPos(cx, cy);
-    if (hoverId !== prevHoverId || hoverGroupId !== prevHoverGroupId) renderCanvas();
+    if (activeTool === "paint") {
+      paintCursorPos = [cx, cy];
+      renderCanvas();
+    } else if (hoverId !== prevHoverId || hoverGroupId !== prevHoverGroupId) {
+      renderCanvas();
+    }
   }
 
   // Double-click to edit text (works in both text and select tools)
