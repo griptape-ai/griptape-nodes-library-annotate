@@ -161,6 +161,9 @@ class AnnotateImage(DataNode):
 
     # ── compositing ───────────────────────────────────────────────────────────
 
+    def _resolve_px(self, val: float, dim: float, is_pct: bool) -> float:
+        return val * dim / 100.0 if is_pct else val
+
     def _parse_color(self, color_str: str, opacity: float = 1.0) -> tuple[int, int, int, int]:
         try:
             r, g, b, _ = parse_color_to_rgba(color_str)
@@ -264,12 +267,20 @@ class AnnotateImage(DataNode):
             an = math.atan2(pts[n - 1][1] - pts[n - 2][1], pts[n - 1][0] - pts[n - 2][0])
             draw.polygon(_half_arc(pts[n - 1][0], pts[n - 1][1], radii[n - 1], an - math.pi / 2), fill=color)
 
-    def _draw_text(self, draw: ImageDraw.ImageDraw, ann: dict, overlay: Image.Image | None = None) -> None:
+    def _draw_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        ann: dict,
+        overlay: Image.Image | None = None,
+        canvas_w: int = 0,
+        canvas_h: int = 0,
+    ) -> None:
         text = ann.get("text", "")
         if not text:
             return
-        x = float(ann.get("x", 0))
-        y = float(ann.get("y", 0))
+        is_pct = bool(ann.get("percentage", False))
+        x = self._resolve_px(float(ann.get("x", 0)), canvas_w, is_pct)
+        y = self._resolve_px(float(ann.get("y", 0)), canvas_h, is_pct)
         rotation = float(ann.get("rotation", 0))
         font_size = max(8, int(ann.get("font_size", 48)))
         color = self._parse_color(ann.get("color", "#ff0000"))
@@ -285,6 +296,23 @@ class AnnotateImage(DataNode):
         pad = font_size * 0.15
         n_lines = len(text.split("\n"))
         line_height = font_size * 1.2  # matches JS lineHeight = fontSize * 1.2
+
+        # Measure text width for anchor offset (use reference bbox at origin)
+        ref_bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=spacing, align=text_align)
+        text_w = ref_bbox[2] - ref_bbox[0]
+        visual_h = line_height * n_lines
+
+        # Apply anchor offsets — shifts draw origin so x/y pin to the chosen edge/center
+        anchor_h = ann.get("anchor_h", "left")
+        anchor_v = ann.get("anchor_v", "top")
+        if anchor_h == "center":
+            x -= text_w / 2
+        elif anchor_h == "right":
+            x -= text_w
+        if anchor_v == "middle":
+            y -= visual_h / 2
+        elif anchor_v == "bottom":
+            y -= visual_h
 
         def _draw_on(d: ImageDraw.ImageDraw, tx: float, ty: float) -> None:
             """Draw bg rect + text at (tx, ty) on draw surface d."""
@@ -303,20 +331,22 @@ class AnnotateImage(DataNode):
         # Rotated text: draw onto an oversized temp so long text isn't clipped before
         # rotation. The padding must be at least the longest text dimension so the text
         # can extend past any canvas edge without being cropped pre-rotation.
-        _bbox_check = draw.multiline_textbbox((0, 0), text, font=font, spacing=spacing, align=text_align)
-        text_w = _bbox_check[2] - _bbox_check[0]
-        rot_pad = int(math.ceil(max(text_w, line_height * n_lines))) + int(pad) + 4
+        rot_pad = int(math.ceil(max(text_w, visual_h))) + int(pad) + 4
 
         temp = Image.new("RGBA", (overlay.width + 2 * rot_pad, overlay.height + 2 * rot_pad), (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp)
         _draw_on(temp_draw, x + rot_pad, y + rot_pad)
 
         degrees = -math.degrees(rotation)
+        # Rotation pivot is the original (pre-anchor-offset) anchor point, which in the
+        # temp image's coordinate space is (ann_x + rot_pad, ann_y + rot_pad).
+        ann_x = self._resolve_px(float(ann.get("x", 0)), canvas_w, is_pct)
+        ann_y = self._resolve_px(float(ann.get("y", 0)), canvas_h, is_pct)
         rotated = temp.rotate(
             degrees,
             resample=Image.Resampling.BICUBIC,
             expand=False,
-            center=(x + rot_pad, y + rot_pad),
+            center=(ann_x + rot_pad, ann_y + rot_pad),
         )
         cropped = rotated.crop((rot_pad, rot_pad, rot_pad + overlay.width, rot_pad + overlay.height))
         overlay.alpha_composite(cropped)
@@ -409,9 +439,10 @@ class AnnotateImage(DataNode):
                 [(x1, y1), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color
             )
 
-    def _draw_rect(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
-        x = float(ann.get("x", 0))
-        y = float(ann.get("y", 0))
+    def _draw_rect(self, draw: ImageDraw.ImageDraw, ann: dict, canvas_w: int = 0, canvas_h: int = 0) -> None:
+        is_pct = bool(ann.get("percentage", False))
+        x = self._resolve_px(float(ann.get("x", 0)), canvas_w, is_pct)
+        y = self._resolve_px(float(ann.get("y", 0)), canvas_h, is_pct)
         w = float(ann.get("w", 100))
         h = float(ann.get("h", 100))
         rotation = float(ann.get("rotation", 0))
@@ -419,24 +450,36 @@ class AnnotateImage(DataNode):
         width = max(1, int(ann.get("width", 2)))
         fill_color_str = ann.get("fill_color", "") or ""
         fill = self._parse_color(fill_color_str) if fill_color_str else None
-        cos_r, sin_r = math.cos(rotation), math.sin(rotation)
         hw, hh = w / 2, h / 2
+        # Anchor: compute actual center from stored position + anchor offset
+        ah = ann.get("anchor_h", "center")
+        av = ann.get("anchor_v", "middle")
+        cx = x + (hw if ah == "left" else -hw if ah == "right" else 0)
+        cy = y + (hh if av == "top" else -hh if av == "bottom" else 0)
+        cos_r, sin_r = math.cos(rotation), math.sin(rotation)
         corners = [
-            (x + lx * cos_r - ly * sin_r, y + lx * sin_r + ly * cos_r)
+            (cx + lx * cos_r - ly * sin_r, cy + lx * sin_r + ly * cos_r)
             for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
         ]
         draw.polygon(corners, fill=fill, outline=color, width=width)
 
-    def _draw_ellipse(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
-        x = float(ann.get("x", 0))
-        y = float(ann.get("y", 0))
+    def _draw_ellipse(self, draw: ImageDraw.ImageDraw, ann: dict, canvas_w: int = 0, canvas_h: int = 0) -> None:
+        is_pct = bool(ann.get("percentage", False))
+        x = self._resolve_px(float(ann.get("x", 0)), canvas_w, is_pct)
+        y = self._resolve_px(float(ann.get("y", 0)), canvas_h, is_pct)
         w = float(ann.get("w", 100))
         h = float(ann.get("h", 100))
         fill_color_str = ann.get("fill_color", "") or ""
         fill = self._parse_color(fill_color_str) if fill_color_str else None
         color = self._parse_color(ann.get("color", "#ff0000"))
         width = max(1, int(ann.get("width", 2)))
-        bbox = [x - w / 2, y - h / 2, x + w / 2, y + h / 2]
+        hw, hh = w / 2, h / 2
+        # Anchor: compute actual center from stored position + anchor offset
+        ah = ann.get("anchor_h", "center")
+        av = ann.get("anchor_v", "middle")
+        cx = x + (hw if ah == "left" else -hw if ah == "right" else 0)
+        cy = y + (hh if av == "top" else -hh if av == "bottom" else 0)
+        bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
         draw.ellipse(bbox, fill=fill, outline=color, width=width)
 
     def _effective_annotations(self, annotation_data: dict) -> list:
@@ -477,6 +520,7 @@ class AnnotateImage(DataNode):
 
         overlay = Image.new("RGBA", bg.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
+        canvas_w, canvas_h = bg.width, bg.height
 
         all_annotations = self._effective_annotations(annotation_data)
         for ann in all_annotations:
@@ -484,13 +528,13 @@ class AnnotateImage(DataNode):
             if ann_type == "paint":
                 self._draw_paint(draw, ann)
             elif ann_type == "text":
-                self._draw_text(draw, ann, overlay)
+                self._draw_text(draw, ann, overlay, canvas_w, canvas_h)
             elif ann_type == "arrow":
                 self._draw_arrow(draw, ann)
             elif ann_type == "rect":
-                self._draw_rect(draw, ann)
+                self._draw_rect(draw, ann, canvas_w, canvas_h)
             elif ann_type == "ellipse":
-                self._draw_ellipse(draw, ann)
+                self._draw_ellipse(draw, ann, canvas_w, canvas_h)
 
         canvas = Image.alpha_composite(bg, overlay)
 

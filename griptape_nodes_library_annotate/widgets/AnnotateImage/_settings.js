@@ -4,6 +4,7 @@
 import { mkIcon } from './_icons.js';
 import {
   DEFAULT_COLOR,
+  DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT,
   DEFAULT_PAINT_SIZE, MIN_PAINT_SIZE, MAX_PAINT_SIZE,
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
@@ -163,6 +164,145 @@ export function createSettings(settingsArea, {
       onToggle({ taper: !(source.taper ?? false) });
     }));
     settingsArea.appendChild(row);
+  }
+
+  // Always-present position controls: % toggle + anchor picker, rendered at the left of the
+  // settings area on every rebuild. ann is the currently selected text/rect/ellipse annotation,
+  // or null when no compatible annotation is selected (controls render disabled in that case).
+  function buildPositionControls(ann) {
+    const H_OPTIONS = [
+      { value: "left",   icon: "align-start-vertical",   title: "Anchor left"   },
+      { value: "center", icon: "align-center-vertical",  title: "Anchor center" },
+      { value: "right",  icon: "align-end-vertical",     title: "Anchor right"  },
+    ];
+    const V_OPTIONS = [
+      { value: "top",    icon: "align-start-horizontal", title: "Anchor top"    },
+      { value: "middle", icon: "align-center-horizontal",title: "Anchor middle" },
+      { value: "bottom", icon: "align-end-horizontal",   title: "Anchor bottom" },
+    ];
+
+    const enabled = !!(ann && (ann.type === "text" || ann.type === "rect" || ann.type === "ellipse"));
+    // Shapes use center/middle as default since x,y is their center; text uses left/top.
+    const isShape = enabled && (ann.type === "rect" || ann.type === "ellipse");
+    const defaultAH = isShape ? "center" : "left";
+    const defaultAV = isShape ? "middle" : "top";
+    const currentAH = enabled ? (ann.anchor_h || defaultAH) : defaultAH;
+    const currentAV = enabled ? (ann.anchor_v || defaultAV) : defaultAV;
+    const isPct = enabled && !!ann.percentage;
+
+    // ── % toggle ───────────────────────────────────────────────────────────
+    const pctBtn = document.createElement("button");
+    pctBtn.className = "ais-toggle-btn" + (isPct ? " active" : "");
+    addTooltip(pctBtn, enabled
+      ? (isPct ? "Position: percentage — click to switch to pixels" : "Position: pixels — click to switch to percentage")
+      : "Percentage position (select text, rect, or ellipse to enable)");
+    pctBtn.style.cssText = "width:26px;height:26px;font-size:11px;font-weight:bold;letter-spacing:-0.5px;" +
+      (enabled ? "" : "opacity:0.3;pointer-events:none;");
+    pctBtn.textContent = "%";
+    if (enabled) {
+      pctBtn.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        const { currentValue: cv } = getState();
+        const cw = cv.canvas_width || DEFAULT_CANVAS_WIDTH;
+        const ch = cv.canvas_height || DEFAULT_CANVAS_HEIGHT;
+        applySingleUpdate(ann.id, (a) => isPct
+          ? { ...a, x: (a.x ?? 0) / 100 * cw, y: (a.y ?? 0) / 100 * ch, percentage: false }
+          : { ...a, x: (a.x ?? 0) / cw * 100, y: (a.y ?? 0) / ch * 100, percentage: true });
+        emit(); rebuild(); renderCanvas();
+      });
+    }
+    settingsArea.appendChild(pctBtn);
+
+    // ── anchor picker ──────────────────────────────────────────────────────
+    let anchorPopup = null;
+
+    function _dismissAnchorPopup() {
+      if (anchorPopup) { anchorPopup.remove(); anchorPopup = null; }
+      document.removeEventListener("pointerdown", _outsideAnchor, true);
+    }
+    function _outsideAnchor(e) {
+      if (anchorPopup && !anchorPopup.contains(e.target)) _dismissAnchorPopup();
+    }
+
+    const anchorBtn = document.createElement("button");
+    anchorBtn.className = "ais-toggle-btn";
+    addTooltip(anchorBtn, enabled ? "Position anchor" : "Position anchor (select text, rect, or ellipse to enable)");
+    const hIcon = H_OPTIONS.find((o) => o.value === currentAH) || H_OPTIONS[0];
+    anchorBtn.appendChild(mkIcon(hIcon.icon, 14));
+    anchorBtn.style.cssText = "width:26px;height:26px;" + (enabled ? "" : "opacity:0.3;pointer-events:none;");
+
+    if (enabled) {
+      anchorBtn.addEventListener("pointerdown", (e) => {
+        e.stopPropagation(); e.preventDefault(); anchorBtn.blur();
+        if (anchorPopup) { _dismissAnchorPopup(); return; }
+
+        anchorPopup = document.createElement("div");
+        anchorPopup.style.cssText = [
+          "position:fixed", "background:var(--popover,#1e1e1e)",
+          "border:1px solid var(--border,#444)", "border-radius:6px",
+          "box-shadow:0 4px 16px rgba(0,0,0,0.5)", "z-index:10000",
+          "padding:6px", "display:grid",
+          "grid-template-columns:repeat(3,28px)", "grid-template-rows:repeat(2,28px)", "gap:2px",
+        ].join(";");
+
+        let ah = currentAH, av = currentAV;
+
+        function _renderGrid() {
+          anchorPopup.innerHTML = "";
+          for (const opt of H_OPTIONS) {
+            const ib = document.createElement("button");
+            ib.className = "ais-toggle-btn" + (ah === opt.value ? " active" : "");
+            ib.style.cssText = "width:28px;height:28px;";
+            addTooltip(ib, opt.title);
+            ib.appendChild(mkIcon(opt.icon, 14));
+            ib.addEventListener("pointerdown", (ev) => {
+              ev.stopPropagation(); ah = opt.value; _renderGrid();
+              applySingleUpdate(ann.id, (a) => ({ ...a, anchor_h: ah, anchor_v: av }));
+              if (ann.type === "text") {
+                const s = getState(); s.toolSettings.text.anchor_h = ah;
+                setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+              }
+              renderCanvas(); emit();
+            });
+            anchorPopup.appendChild(ib);
+          }
+          for (const opt of V_OPTIONS) {
+            const ib = document.createElement("button");
+            ib.className = "ais-toggle-btn" + (av === opt.value ? " active" : "");
+            ib.style.cssText = "width:28px;height:28px;";
+            addTooltip(ib, opt.title);
+            ib.appendChild(mkIcon(opt.icon, 14));
+            ib.addEventListener("pointerdown", (ev) => {
+              ev.stopPropagation(); av = opt.value; _renderGrid();
+              applySingleUpdate(ann.id, (a) => ({ ...a, anchor_h: ah, anchor_v: av }));
+              if (ann.type === "text") {
+                const s = getState(); s.toolSettings.text.anchor_v = av;
+                setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+              }
+              renderCanvas(); emit();
+            });
+            anchorPopup.appendChild(ib);
+          }
+        }
+        _renderGrid();
+        document.body.appendChild(anchorPopup);
+        const bRect = anchorBtn.getBoundingClientRect();
+        anchorPopup.style.top = `${bRect.bottom + 4}px`;
+        requestAnimationFrame(() => {
+          const pw = anchorPopup.offsetWidth;
+          let left = bRect.left;
+          if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+          anchorPopup.style.left = `${left}px`;
+        });
+        setTimeout(() => document.addEventListener("pointerdown", _outsideAnchor, true), 0);
+      });
+    }
+    settingsArea.appendChild(anchorBtn);
+
+    // ── separator ──────────────────────────────────────────────────────────
+    const sep = document.createElement("div");
+    sep.style.cssText = "width:1px;height:20px;background:var(--border);margin:0 4px;flex-shrink:0;";
+    settingsArea.appendChild(sep);
   }
 
   // Builds settings for the active drawing tool (no annotation selected): size, color, fill, arrow toggles.
@@ -522,5 +662,5 @@ export function createSettings(settingsArea, {
     }
   }
 
-  return { buildToolSettings, buildAnnotationSettings, buildMultiSettings };
+  return { buildPositionControls, buildToolSettings, buildAnnotationSettings, buildMultiSettings };
 }

@@ -167,6 +167,53 @@ export default function AnnotateImageSimple(container, props) {
     };
   }
 
+  // Resolves percentage x/y to pixel coordinates for text/rect/ellipse annotations.
+  // Returns the annotation unchanged for other types or when percentage mode is off.
+  function _resolveAnn(ann) {
+    if (!ann.percentage) return ann;
+    if (ann.type !== "text" && ann.type !== "rect" && ann.type !== "ellipse") return ann;
+    const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+    const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+    return { ...ann, x: (ann.x ?? 0) * cw / 100, y: (ann.y ?? 0) * ch / 100 };
+  }
+
+  // Creates the origPositions entry for a translate drag.
+  // Percentage annotations: store pixel coords so delta math works; mark with percentage flag.
+  function _makeOrigPos(a) {
+    if (a.percentage && (a.type === "text" || a.type === "rect" || a.type === "ellipse")) {
+      const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+      const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+      return { x: (a.x ?? 0) * cw / 100, y: (a.y ?? 0) * ch / 100, percentage: true };
+    }
+    return { x: a.x ?? 0, y: a.y ?? 0 };
+  }
+
+  // Returns the actual center {cx, cy} of a rect/ellipse accounting for anchor_h/anchor_v.
+  // ann must have pixel coordinates (call _resolveAnn first if % mode is on).
+  function _shapeCenter(ann) {
+    const hw = (ann.w || 10) / 2, hh = (ann.h || 10) / 2;
+    const ah = ann.anchor_h || "center", av = ann.anchor_v || "middle";
+    return {
+      cx: (ann.x || 0) + (ah === "left" ? hw : ah === "right" ? -hw : 0),
+      cy: (ann.y || 0) + (av === "top" ? hh : av === "bottom" ? -hh : 0),
+    };
+  }
+
+  // Returns anchor offsets {xOff, yOff, w, h} for a text annotation in its local (post-rotate) space.
+  function _textAnchorOffset(ann) {
+    const fontSize = Math.max(MIN_TEXT_SIZE, ann.font_size || DEFAULT_TEXT_SIZE);
+    ctx.save(); ctx.font = `${fontSize}px sans-serif`;
+    const lines = (ann.text || "").split("\n");
+    const w = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
+    ctx.restore();
+    const h = fontSize * 1.2 * lines.length;
+    const anchorH = ann.anchor_h || "left";
+    const anchorV = ann.anchor_v || "top";
+    const xOff = anchorH === "center" ? -w / 2 : anchorH === "right" ? -w : 0;
+    const yOff = anchorV === "middle" ? -h / 2 : anchorV === "bottom" ? -h : 0;
+    return { xOff, yOff, w, h };
+  }
+
   // image cache — strip query strings so the same base URL always hits the same entry
   const imageCache = {};
   function urlCacheKey(url) { return url ? url.split("?")[0] : url; }
@@ -333,6 +380,7 @@ export default function AnnotateImageSimple(container, props) {
   // Declared as let so rebuildSettings can reference them before the factories run.
   let updateHud = null;
   let dismissLayerPopup = null;
+  let buildPositionControls = null;
   let buildToolSettings = null;
   let buildAnnotationSettings = null;
   let buildMultiSettings = null;
@@ -345,6 +393,15 @@ export default function AnnotateImageSimple(container, props) {
     _buildTxFrame();
     updateHud?.();
     settingsArea.innerHTML = "";
+
+    // Determine the active positional annotation (text/rect/ellipse) for the always-visible controls.
+    const _posAnn = () => {
+      const selIds = currentValue.selected_ids || [];
+      if (selIds.length !== 1) return null;
+      const a = _effectiveAnnotations().find((ann) => ann.id === selIds[0]);
+      return (a && (a.type === "text" || a.type === "rect" || a.type === "ellipse")) ? a : null;
+    };
+    buildPositionControls?.(_posAnn());
 
     if (activeTool === "select") {
       const selIds = currentValue.selected_ids || [];
@@ -594,12 +651,14 @@ export default function AnnotateImageSimple(container, props) {
   }
 
   // Dispatches to the type-specific draw function for a committed annotation.
+  // Resolves percentage x/y to pixels before drawing so draw functions stay unaware of % mode.
   function drawAnnotation(ann, selected) {
-    if (ann.type === "paint")   drawPaint(ann, selected);
-    else if (ann.type === "text")   drawText(ann, selected);
-    else if (ann.type === "arrow")  drawArrowAnnotation(ann, selected);
-    else if (ann.type === "rect")   drawRect(ann, selected);
-    else if (ann.type === "ellipse") drawEllipse(ann, selected);
+    const r = _resolveAnn(ann);
+    if (r.type === "paint")   drawPaint(r, selected);
+    else if (r.type === "text")   drawText(r, selected);
+    else if (r.type === "arrow")  drawArrowAnnotation(r, selected);
+    else if (r.type === "rect")   drawRect(r, selected);
+    else if (r.type === "ellipse") drawEllipse(r, selected);
   }
 
   // ── drawing functions (bound to live state via factory) ───────────────────
@@ -609,18 +668,15 @@ export default function AnnotateImageSimple(container, props) {
   // ── hit testing ───────────────────────────────────────────────────────────
   function hitTest(cx, cy) {
     const anns = [..._effectiveAnnotations()].reverse();
-    for (const ann of anns) {
+    for (const rawAnn of anns) {
+      const ann = _resolveAnn(rawAnn);
       if (ann.type === "text") {
-        const fontSize = Math.max(MIN_TEXT_SIZE, ann.font_size || DEFAULT_TEXT_SIZE);
-        ctx.font = `${fontSize}px sans-serif`;
-        const lines = (ann.text || "").split("\n");
-        const w = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
-        const h = fontSize * 1.2 * lines.length;
+        const { xOff, yOff, w, h } = _textAnchorOffset(ann);
         const r = -(ann.rotation || 0);
         const cos = Math.cos(r), sin = Math.sin(r);
         const dx = cx - (ann.x || 0), dy = cy - (ann.y || 0);
         const lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
-        if (lx >= -4 && lx <= w + 4 && ly >= -4 && ly <= h + 4) return ann;
+        if (lx >= xOff - 4 && lx <= xOff + w + 4 && ly >= yOff - 4 && ly <= yOff + h + 4) return rawAnn;
       } else if (ann.type === "arrow") {
         const { cp1x, cp1y, cp2x, cp2y } = defaultCps(ann);
         const tol = Math.max(12 / displayScale, (ann.width || 3) + 6);
@@ -629,7 +685,7 @@ export default function AnnotateImageSimple(container, props) {
           const t = i / N, mt = 1 - t;
           const bx = mt**3*ann.x1 + 3*mt**2*t*cp1x + 3*mt*t**2*cp2x + t**3*ann.x2;
           const by = mt**3*ann.y1 + 3*mt**2*t*cp1y + 3*mt*t**2*cp2y + t**3*ann.y2;
-          if (Math.hypot(cx - bx, cy - by) <= tol) return ann;
+          if (Math.hypot(cx - bx, cy - by) <= tol) return rawAnn;
         }
       } else if (ann.type === "paint") {
         const [lx, ly] = paintInvTransformPt(ann, cx, cy);
@@ -637,16 +693,17 @@ export default function AnnotateImageSimple(container, props) {
         const isSelected = (currentValue.selected_ids || []).includes(ann.id);
         if (isSelected) {
           const nb = naturalBounds(ann);
-          if (nb && lx >= nb.minX && lx <= nb.maxX && ly >= nb.minY && ly <= nb.maxY) return ann;
+          if (nb && lx >= nb.minX && lx <= nb.maxX && ly >= nb.minY && ly <= nb.maxY) return rawAnn;
         }
         for (const stroke of (ann.strokes || [])) {
           const tol = Math.max(12 / displayScale, (stroke.size || DEFAULT_PAINT_SIZE) / 2 + 4);
           for (const pt of (stroke.points || [])) {
-            if (Math.hypot(lx - pt[0], ly - pt[1]) <= tol) return ann;
+            if (Math.hypot(lx - pt[0], ly - pt[1]) <= tol) return rawAnn;
           }
         }
       } else if (ann.type === "rect" || ann.type === "ellipse") {
-        const dx = cx - (ann.x || 0), dy = cy - (ann.y || 0);
+        const { cx: scx, cy: scy } = _shapeCenter(ann);
+        const dx = cx - scx, dy = cy - scy;
         const r = -(ann.rotation || 0);
         const cos = Math.cos(r), sin = Math.sin(r);
         const lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
@@ -655,18 +712,18 @@ export default function AnnotateImageSimple(container, props) {
         const isSelected = (currentValue.selected_ids || []).includes(ann.id);
         if (ann.type === "rect") {
           if (isSelected || ann.fill_color) {
-            if (lx >= -hw && lx <= hw && ly >= -hh && ly <= hh) return ann;
+            if (lx >= -hw && lx <= hw && ly >= -hh && ly <= hh) return rawAnn;
           } else {
             const nearH = Math.abs(Math.abs(lx) - hw) <= tol && ly >= -hh - tol && ly <= hh + tol;
             const nearV = Math.abs(Math.abs(ly) - hh) <= tol && lx >= -hw - tol && lx <= hw + tol;
-            if (nearH || nearV) return ann;
+            if (nearH || nearV) return rawAnn;
           }
         } else {
           const ex = lx / (hw + tol), ey = ly / (hh + tol);
           if (ex * ex + ey * ey <= 1) {
-            if (isSelected || ann.fill_color) return ann;
+            if (isSelected || ann.fill_color) return rawAnn;
             const exIn = hw > tol ? lx / (hw - tol) : 0, eyIn = hh > tol ? ly / (hh - tol) : 0;
-            if (exIn * exIn + eyIn * eyIn >= 1) return ann;
+            if (exIn * exIn + eyIn * eyIn >= 1) return rawAnn;
           }
         }
       }
@@ -677,12 +734,10 @@ export default function AnnotateImageSimple(container, props) {
   // Returns the canvas-space axis-aligned bounding box for an annotation
   function _getAnnotationBounds(ann) {
     if (ann.type === "text") {
-      const fontSize = Math.max(MIN_TEXT_SIZE, ann.font_size || DEFAULT_TEXT_SIZE);
-      ctx.font = `${fontSize}px sans-serif`;
-      const w = ctx.measureText(ann.text || "").width;
-      const h = fontSize * 1.2;
-      const ax = ann.x || 0, ay = ann.y || 0;
-      return { minX: ax - 4, minY: ay - 4, maxX: ax + w + 8, maxY: ay + h + 8 };
+      const r = _resolveAnn(ann);
+      const { xOff, yOff, w, h } = _textAnchorOffset(r);
+      const ax = r.x || 0, ay = r.y || 0;
+      return { minX: ax + xOff - 4, minY: ay + yOff - 4, maxX: ax + xOff + w + 8, maxY: ay + yOff + h + 8 };
     } else if (ann.type === "arrow") {
       const { cp1x, cp1y, cp2x, cp2y } = defaultCps(ann);
       const pad = Math.max(8, (ann.width || 3) / 2 + 4);
@@ -701,17 +756,19 @@ export default function AnnotateImageSimple(container, props) {
       }
       return { minX, minY, maxX, maxY };
     } else if (ann.type === "rect" || ann.type === "ellipse") {
-      const hw = (ann.w || 10) / 2, hh = (ann.h || 10) / 2;
-      const r = ann.rotation || 0;
-      const cos = Math.cos(r), sin = Math.sin(r);
+      const a = _resolveAnn(ann);
+      const hw = (a.w || 10) / 2, hh = (a.h || 10) / 2;
+      const rot = a.rotation || 0;
+      const cos = Math.cos(rot), sin = Math.sin(rot);
+      const { cx: scx, cy: scy } = _shapeCenter(a);
       const corners = [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([lx,ly]) =>
-        [(ann.x || 0) + lx*cos - ly*sin, (ann.y || 0) + lx*sin + ly*cos]);
+        [scx + lx*cos - ly*sin, scy + lx*sin + ly*cos]);
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const [cx, cy] of corners) {
         minX = Math.min(minX, cx); minY = Math.min(minY, cy);
         maxX = Math.max(maxX, cx); maxY = Math.max(maxY, cy);
       }
-      const pad = (ann.width || 2) / 2 + 4;
+      const pad = (a.width || 2) / 2 + 4;
       return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
     }
     return null;
@@ -752,11 +809,13 @@ export default function AnnotateImageSimple(container, props) {
       if (!ann) { txFrame = null; return; }
       if (ann.type === "arrow") { txFrame = null; return; } // arrows use endpoint handles
       if (ann.type === "rect" || ann.type === "ellipse") {
+        const ra = _resolveAnn(ann);
+        const { cx, cy } = _shapeCenter(ra);
         txFrame = {
-          pivotX: ann.x || 0, pivotY: ann.y || 0,
-          rotation: ann.rotation || 0,
-          halfW: (ann.w || 10) / 2 + pad,
-          halfH: (ann.h || 10) / 2 + pad,
+          pivotX: cx, pivotY: cy,
+          rotation: ra.rotation || 0,
+          halfW: (ra.w || 10) / 2 + pad,
+          halfH: (ra.h || 10) / 2 + pad,
           _selIds: [...selIds],
         };
         return;
@@ -776,19 +835,18 @@ export default function AnnotateImageSimple(container, props) {
         return;
       }
       if (ann.type === "text") {
-        const fontSize = Math.max(MIN_TEXT_SIZE, ann.font_size || DEFAULT_TEXT_SIZE);
-        const lineHeight = fontSize * 1.2;
-        const lines = (ann.text || "").split("\n");
-        ctx.save(); ctx.font = `${fontSize}px sans-serif`;
-        const textW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
-        ctx.restore();
-        const hw = textW / 2, hh = (lineHeight * lines.length) / 2;
-        const r = ann.rotation || 0, cos = Math.cos(r), sin = Math.sin(r);
-        const textPad = fontSize * 0.15; // matches drawText bg rect and Python _draw_text
+        const ra = _resolveAnn(ann);
+        const { xOff, yOff, w: textW, h: textH } = _textAnchorOffset(ra);
+        const hw = textW / 2, hh = textH / 2;
+        const rot = ra.rotation || 0, cos = Math.cos(rot), sin = Math.sin(rot);
+        const textPad = (ra.font_size || DEFAULT_TEXT_SIZE) * 0.15;
+        // The OBB pivot is the center of the text box in world space.
+        // In local rotated space the box center is at (xOff + hw, yOff + hh) from the anchor point.
+        const lcx = xOff + hw, lcy = yOff + hh;
         txFrame = {
-          pivotX: (ann.x || 0) + hw * cos - hh * sin,
-          pivotY: (ann.y || 0) + hw * sin + hh * cos,
-          rotation: r,
+          pivotX: (ra.x || 0) + lcx * cos - lcy * sin,
+          pivotY: (ra.y || 0) + lcx * sin + lcy * cos,
+          rotation: rot,
           halfW: hw + textPad, halfH: hh + textPad,
           _selIds: [...selIds],
         };
@@ -817,12 +875,10 @@ export default function AnnotateImageSimple(container, props) {
   // Returns true if annotation overlaps the given canvas-space rectangle
   function _annotationIntersectsRect(ann, x1, y1, x2, y2) {
     if (ann.type === "text") {
-      const fontSize = Math.max(MIN_TEXT_SIZE, ann.font_size || DEFAULT_TEXT_SIZE);
-      ctx.font = `${fontSize}px sans-serif`;
-      const w = ctx.measureText(ann.text || "").width;
-      const h = fontSize * 1.2;
-      const ax = ann.x || 0, ay = ann.y || 0;
-      return !(ax + w < x1 || ax > x2 || ay + h < y1 || ay > y2);
+      const ra = _resolveAnn(ann);
+      const { xOff, yOff, w, h } = _textAnchorOffset(ra);
+      const ax = ra.x || 0, ay = ra.y || 0;
+      return !(ax + xOff + w < x1 || ax + xOff > x2 || ay + yOff + h < y1 || ay + yOff > y2);
     } else if (ann.type === "arrow") {
       const { cp1x, cp1y, cp2x, cp2y } = defaultCps(ann);
       const N = 12;
@@ -857,19 +913,37 @@ export default function AnnotateImageSimple(container, props) {
     textEditId = ann.id;
     currentValue = { ...currentValue, selected_ids: [ann.id] };
 
-    const fontSize = Math.max(MIN_TEXT_SIZE, ann.font_size || DEFAULT_TEXT_SIZE);
+    const ra = _resolveAnn(ann);
+    const fontSize = Math.max(MIN_TEXT_SIZE, ra.font_size || DEFAULT_TEXT_SIZE);
     const totalScale = displayScale * viewScale;
-    const padPx = fontSize * 0.15 * totalScale; // matches drawText bg rect and Python _draw_text
+    const padPx = fontSize * 0.15 * totalScale;
+
+    // Compute anchor offset in local (post-rotate) space
+    const { xOff, yOff } = _textAnchorOffset(ra);
+    // Convert anchor offset to world space (rotate it by annotation's rotation)
+    const rot = ra.rotation || 0;
+    const cosR = Math.cos(rot), sinR = Math.sin(rot);
+    const worldDX = xOff * cosR - yOff * sinR;
+    const worldDY = xOff * sinR + yOff * cosR;
+    // Screen position of the text box top-left
+    const worldX = (ra.x || 0) + worldDX;
+    const worldY = (ra.y || 0) + worldDY;
+    const screenLeft = worldX * totalScale + centerOffsetX + panX - padPx;
+    const screenTop  = worldY * totalScale + centerOffsetY + panY - padPx;
+    // Transform-origin: position of the rotation pivot (ra.x, ra.y) inside the textarea
+    const pivotRelX = ((ra.x || 0) - worldX) * totalScale + padPx;
+    const pivotRelY = ((ra.y || 0) - worldY) * totalScale + padPx;
+
     textInput = document.createElement("textarea");
-    textInput.value = ann.text || "";
+    textInput.value = ra.text || "";
     textInput.rows = 1;
     textInput.style.cssText = [
       "position:absolute",
-      `left:${(ann.x || 0) * totalScale + centerOffsetX + panX - padPx}px`,
-      `top:${(ann.y || 0) * totalScale + centerOffsetY + panY - padPx}px`,
+      `left:${screenLeft}px`,
+      `top:${screenTop}px`,
       "min-width:60px",
-      `background:${ann.bg_color || "transparent"}`,
-      `color:${ann.color || "#ffffff"}`,
+      `background:${ra.bg_color || "transparent"}`,
+      `color:${ra.color || "#ffffff"}`,
       `font-size:${fontSize * totalScale}px`,
       "font-family:sans-serif",
       "border:none",
@@ -882,9 +956,9 @@ export default function AnnotateImageSimple(container, props) {
       "box-sizing:border-box",
       "margin:0",
       "line-height:1.2",
-      `text-align:${ann.text_align || "left"}`,
-      `transform:rotate(${ann.rotation || 0}rad)`,
-      `transform-origin:${padPx}px ${padPx}px`,
+      `text-align:${ra.text_align || "left"}`,
+      `transform:rotate(${rot}rad)`,
+      `transform-origin:${pivotRelX}px ${pivotRelY}px`,
     ].join(";");
 
     canvasWrap.appendChild(textInput);
@@ -1109,8 +1183,15 @@ export default function AnnotateImageSimple(container, props) {
       const rh = frameRotHandle(txFrame, displayScale);
       const buildSnapshots = () => {
         const s = {};
-        for (const ann of _effectiveAnnotations())
-          if (selIds.includes(ann.id)) s[ann.id] = snapshotAnn(ann);
+        for (const ann of _effectiveAnnotations()) {
+          if (!selIds.includes(ann.id)) continue;
+          const resolved = _resolveAnn(ann);
+          const snap = snapshotAnn(resolved);
+          snap._was_percentage = !!ann.percentage;
+          snap._anchor_h = ann.anchor_h || (ann.type === "rect" || ann.type === "ellipse" ? "center" : "left");
+          snap._anchor_v = ann.anchor_v || (ann.type === "rect" || ann.type === "ellipse" ? "middle" : "top");
+          s[ann.id] = snap;
+        }
         return s;
       };
       if (!txFrame.noRotate && Math.hypot(cx - rh[0], cy - rh[1]) <= handleR) {
@@ -1145,7 +1226,7 @@ export default function AnnotateImageSimple(container, props) {
             const cps = defaultCps(a);
             origPositions[id] = { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2,
               cp1x: cps.cp1x, cp1y: cps.cp1y, cp2x: cps.cp2x, cp2y: cps.cp2y };
-          } else origPositions[id] = { x: a.x ?? 0, y: a.y ?? 0 };
+          } else origPositions[id] = _makeOrigPos(a);
         }
         dragState = { type: "translate", startCx: cx, startCy: cy, origPositions,
           origPivotX: txFrame.pivotX, origPivotY: txFrame.pivotY };
@@ -1161,7 +1242,7 @@ export default function AnnotateImageSimple(container, props) {
         hoverId = null;
         currentValue = { ...currentValue, selected_ids: [hit.id] };
         dragState = { type: "translate", startCx: cx, startCy: cy,
-          origPositions: { [hit.id]: { x: hit.x ?? 0, y: hit.y ?? 0 } },
+          origPositions: { [hit.id]: _makeOrigPos(hit) },
           origPivotX: txFrame?.pivotX, origPivotY: txFrame?.pivotY };
         canvas.style.cursor = "grabbing";
         rebuildSettings();
@@ -1184,8 +1265,15 @@ export default function AnnotateImageSimple(container, props) {
         const rh = frameRotHandle(txFrame, displayScale);
         const buildSnapshots = () => {
           const s = {};
-          for (const ann of _effectiveAnnotations())
-            if (selIds.includes(ann.id)) s[ann.id] = snapshotAnn(ann);
+          for (const ann of _effectiveAnnotations()) {
+            if (!selIds.includes(ann.id)) continue;
+            const resolved = _resolveAnn(ann);
+            const snap = snapshotAnn(resolved);
+            snap._was_percentage = !!ann.percentage;
+            snap._anchor_h = ann.anchor_h || (ann.type === "rect" || ann.type === "ellipse" ? "center" : "left");
+            snap._anchor_v = ann.anchor_v || (ann.type === "rect" || ann.type === "ellipse" ? "middle" : "top");
+            s[ann.id] = snap;
+          }
           return s;
         };
         // Rotation handle
@@ -1225,7 +1313,7 @@ export default function AnnotateImageSimple(container, props) {
               const cps = defaultCps(a);
               origPositions[id] = { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2,
                 cp1x: cps.cp1x, cp1y: cps.cp1y, cp2x: cps.cp2x, cp2y: cps.cp2y };
-            } else origPositions[id] = { x: a.x ?? 0, y: a.y ?? 0 };
+            } else origPositions[id] = _makeOrigPos(a);
           }
           dragState = { type: "translate", startCx: cx, startCy: cy, origPositions,
             origPivotX: txFrame.pivotX, origPivotY: txFrame.pivotY };
@@ -1296,7 +1384,7 @@ export default function AnnotateImageSimple(container, props) {
             const cps = defaultCps(a);
             origPositions[id] = { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2,
               cp1x: cps.cp1x, cp1y: cps.cp1y, cp2x: cps.cp2x, cp2y: cps.cp2y };
-          } else origPositions[id] = { x: a.x ?? 0, y: a.y ?? 0 };
+          } else origPositions[id] = _makeOrigPos(a);
         }
         dragState = { type: "translate", startCx: cx, startCy: cy, origPositions,
           origPivotX: txFrame?.pivotX, origPivotY: txFrame?.pivotY };
@@ -1379,7 +1467,7 @@ export default function AnnotateImageSimple(container, props) {
         const origPositions = {};
         for (const id of newSelIds) {
           const a = _effectiveAnnotations().find((ann) => ann.id === id);
-          if (a) origPositions[id] = { x: a.x ?? 0, y: a.y ?? 0 };
+          if (a) origPositions[id] = _makeOrigPos(a);
         }
         dragState = { type: "translate", startCx: cx, startCy: cy, origPositions,
           origPivotX: txFrame?.pivotX, origPivotY: txFrame?.pivotY };
@@ -1401,7 +1489,7 @@ export default function AnnotateImageSimple(container, props) {
         const origPositions = {};
         for (const id of newSelIds) {
           const a = _effectiveAnnotations().find((ann) => ann.id === id);
-          if (a) origPositions[id] = { x: a.x ?? 0, y: a.y ?? 0 };
+          if (a) origPositions[id] = _makeOrigPos(a);
         }
         dragState = { type: "translate", startCx: cx, startCy: cy, origPositions,
           origPivotX: txFrame?.pivotX, origPivotY: txFrame?.pivotY };
@@ -1509,31 +1597,51 @@ export default function AnnotateImageSimple(container, props) {
               y: ax*sin + ay*cos + pivot.y - snap.cy,
               rotation: snap.rotation + dAngle };
           } else if (a.type === "rect" || a.type === "ellipse") {
-            const dx = snap.x - pivot.x, dy = snap.y - pivot.y;
-            return { ...a,
-              x: dx*cos - dy*sin + pivot.x, y: dx*sin + dy*cos + pivot.y,
-              rotation: snap.rotation + dAngle };
+            const hw = (snap.w || 10) / 2, hh = (snap.h || 10) / 2;
+            const ah = snap._anchor_h, av = snap._anchor_v;
+            // Orbit the actual shape center (not the anchor point) around the pivot
+            const xOff = ah === "left" ? hw : ah === "right" ? -hw : 0;
+            const yOff = av === "top" ? hh : av === "bottom" ? -hh : 0;
+            const shapeCx = snap.x + xOff, shapeCy = snap.y + yOff;
+            const dx = shapeCx - pivot.x, dy = shapeCy - pivot.y;
+            const newCx = dx*cos - dy*sin + pivot.x, newCy = dx*sin + dy*cos + pivot.y;
+            const nx = newCx - xOff, ny = newCy - yOff;
+            if (snap._was_percentage) {
+              const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+              const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+              return { ...a, x: nx / cw * 100, y: ny / ch * 100, rotation: snap.rotation + dAngle };
+            }
+            return { ...a, x: nx, y: ny, rotation: snap.rotation + dAngle };
           } else if (a.type === "text") {
             const r = snap.rotation + dAngle;
             const fontSize = Math.max(MIN_TEXT_SIZE, snap.font_size || DEFAULT_TEXT_SIZE);
             const lineHeight = fontSize * 1.2;
             const lines = (snap.text || "").split("\n");
             ctx.save(); ctx.font = `${fontSize}px sans-serif`;
-            const hw = Math.max(1, ...lines.map((l) => ctx.measureText(l).width)) / 2;
+            const tw = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
             ctx.restore();
-            const hh = (lineHeight * lines.length) / 2;
-            // Compute text's original world-space center from snap TL + snap rotation
+            const hw = tw / 2, hh = (lineHeight * lines.length) / 2;
+            // Local offset from anchor to text box center (depends on anchor settings)
+            const ah = snap._anchor_h, av = snap._anchor_v;
+            const lcx = ah === "center" ? 0 : ah === "right" ? -hw : hw;
+            const lcy = av === "middle" ? 0 : av === "bottom" ? -hh : hh;
+            // World center from anchor point + snap rotation
             const origR = snap.rotation;
-            const origCx = snap.x + hw * Math.cos(origR) - hh * Math.sin(origR);
-            const origCy = snap.y + hw * Math.sin(origR) + hh * Math.cos(origR);
-            // Orbit that center around the group pivot by dAngle
+            const origCx = snap.x + lcx * Math.cos(origR) - lcy * Math.sin(origR);
+            const origCy = snap.y + lcx * Math.sin(origR) + lcy * Math.cos(origR);
+            // Orbit center around group pivot
             const dcx = origCx - pivot.x, dcy = origCy - pivot.y;
             const newCx = pivot.x + dcx * cos - dcy * sin;
             const newCy = pivot.y + dcx * sin + dcy * cos;
-            // Derive new TL from new center + new rotation
-            return { ...a, rotation: r,
-              x: newCx - hw * Math.cos(r) + hh * Math.sin(r),
-              y: newCy - hw * Math.sin(r) - hh * Math.cos(r) };
+            // New anchor point from new center + new rotation
+            const nx = newCx - lcx * Math.cos(r) + lcy * Math.sin(r);
+            const ny = newCy - lcx * Math.sin(r) - lcy * Math.cos(r);
+            if (snap._was_percentage) {
+              const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+              const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+              return { ...a, rotation: r, x: nx / cw * 100, y: ny / ch * 100 };
+            }
+            return { ...a, rotation: r, x: nx, y: ny };
           } else if (a.type === "arrow") {
             const d1x = snap.x1 - pivot.x, d1y = snap.y1 - pivot.y;
             const d2x = snap.x2 - pivot.x, d2y = snap.y2 - pivot.y;
@@ -1578,12 +1686,25 @@ export default function AnnotateImageSimple(container, props) {
             return { ...a, x: nax - snap.cx, y: nay - snap.cy,
               scaleX: snap.scaleX * ratioX, scaleY: snap.scaleY * ratioY };
           } else if (a.type === "rect" || a.type === "ellipse") {
-            const [nx, ny] = scaleAnchor(snap.x, snap.y);
-            return { ...a, x: nx, y: ny,
-              w: Math.max(2, snap.w * ratioX), h: Math.max(2, snap.h * ratioY) };
+            // Scale the shape center, then derive the new anchor point
+            const hw = (snap.w || 10) / 2, hh = (snap.h || 10) / 2;
+            const ah = snap._anchor_h, av = snap._anchor_v;
+            const xOff = ah === "left" ? hw : ah === "right" ? -hw : 0;
+            const yOff = av === "top" ? hh : av === "bottom" ? -hh : 0;
+            const [newCx, newCy] = scaleAnchor(snap.x + xOff, snap.y + yOff);
+            const newW = Math.max(2, snap.w * ratioX), newH = Math.max(2, snap.h * ratioY);
+            const newXOff = ah === "left" ? newW / 2 : ah === "right" ? -newW / 2 : 0;
+            const newYOff = av === "top" ? newH / 2 : av === "bottom" ? -newH / 2 : 0;
+            const nx = newCx - newXOff, ny = newCy - newYOff;
+            if (snap._was_percentage) {
+              const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+              const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+              return { ...a, x: nx / cw * 100, y: ny / ch * 100, w: newW, h: newH };
+            }
+            return { ...a, x: nx, y: ny, w: newW, h: newH };
           } else if (a.type === "text") {
             // Text can only scale uniformly (font_size is one number).
-            // Scale the text's world-space center, then recompute TL from new metrics.
+            // Scale the text's world-space center, then recompute anchor from new metrics.
             const r = snap.rotation || 0, cos = Math.cos(r), sin = Math.sin(r);
             const origFontSize = Math.max(MIN_TEXT_SIZE, snap.font_size || DEFAULT_TEXT_SIZE);
             const lines = (snap.text || "").split("\n");
@@ -1591,17 +1712,27 @@ export default function AnnotateImageSimple(container, props) {
             const origTextW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
             ctx.restore();
             const origHw = origTextW / 2, origHh = (origFontSize * 1.2 * lines.length) / 2;
-            const [ncx, ncy] = scaleAnchor(snap.x + origHw * cos - origHh * sin,
-                                            snap.y + origHw * sin + origHh * cos);
+            const ah = snap._anchor_h, av = snap._anchor_v;
+            const lcx = ah === "center" ? 0 : ah === "right" ? -origHw : origHw;
+            const lcy = av === "middle" ? 0 : av === "bottom" ? -origHh : origHh;
+            const [ncx, ncy] = scaleAnchor(snap.x + lcx * cos - lcy * sin,
+                                            snap.y + lcx * sin + lcy * cos);
             const ratio = Math.sqrt(ratioX * ratioY);
             const newFontSize = Math.max(MIN_TEXT_SIZE, Math.round(origFontSize * ratio));
             ctx.save(); ctx.font = `${newFontSize}px sans-serif`;
             const newTextW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
             ctx.restore();
             const newHw = newTextW / 2, newHh = (newFontSize * 1.2 * lines.length) / 2;
-            return { ...a, font_size: newFontSize,
-              x: ncx - newHw * cos + newHh * sin,
-              y: ncy - newHw * sin - newHh * cos };
+            const newLcx = ah === "center" ? 0 : ah === "right" ? -newHw : newHw;
+            const newLcy = av === "middle" ? 0 : av === "bottom" ? -newHh : newHh;
+            const nx = ncx - newLcx * cos + newLcy * sin;
+            const ny = ncy - newLcx * sin - newLcy * cos;
+            if (snap._was_percentage) {
+              const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+              const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+              return { ...a, font_size: newFontSize, x: nx / cw * 100, y: ny / ch * 100 };
+            }
+            return { ...a, font_size: newFontSize, x: nx, y: ny };
           } else if (a.type === "arrow") {
             const [nx1, ny1] = scaleAnchor(snap.x1, snap.y1);
             const [nx2, ny2] = scaleAnchor(snap.x2, snap.y2);
@@ -1631,12 +1762,16 @@ export default function AnnotateImageSimple(container, props) {
       } else if (dragState.type === "translate") {
         const dx = cx - dragState.startCx, dy = cy - dragState.startCy;
         const translateIds = Object.keys(dragState.origPositions);
+        const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+        const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
         const { annotations: trAnns, overrides: trOvr } = _applyAnnotationMap(translateIds, (a) => {
           const orig = dragState.origPositions[a.id];
           if (!orig) return a;
           if (a.type === "arrow")
             return { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy,
               cp1x: orig.cp1x + dx, cp1y: orig.cp1y + dy, cp2x: orig.cp2x + dx, cp2y: orig.cp2y + dy };
+          if (orig.percentage)
+            return { ...a, x: (orig.x + dx) / cw * 100, y: (orig.y + dy) / ch * 100 };
           return { ...a, x: orig.x + dx, y: orig.y + dy };
         });
         currentValue = { ...currentValue, annotations: trAnns, overrides: trOvr };
@@ -2098,6 +2233,7 @@ export default function AnnotateImageSimple(container, props) {
     emit: _emit,
     rebuild: () => rebuildSettings(),
   });
+  buildPositionControls = _settingsMod.buildPositionControls;
   buildToolSettings = _settingsMod.buildToolSettings;
   buildAnnotationSettings = _settingsMod.buildAnnotationSettings;
   buildMultiSettings = _settingsMod.buildMultiSettings;
