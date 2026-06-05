@@ -92,6 +92,8 @@ export default function AnnotateImageSimple(container, props) {
   let currentEllipse = null;
   let dragState = null;
   let lastPtTime = 0, lastPtX = 0, lastPtY = 0, velSmoothed = 0;
+  let paintCursorPos = null;
+  let paintCursorOver = false;
 
   // text edit state
   let textInput = null;
@@ -251,7 +253,12 @@ export default function AnnotateImageSimple(container, props) {
   // ── zoom via scroll wheel ─────────────────────────────────────────────────
   canvasWrap.addEventListener("wheel", (e) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    // Normalize across deltaMode (pixel / line / page) then scale continuously.
+    // This prevents Wacom barrel buttons and high-resolution trackpads from
+    // over-shooting with large or rapid deltas.
+    const raw = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    const clamped = Math.max(-300, Math.min(300, raw));
+    const factor = Math.pow(1.0015, -clamped);
     const newVS = Math.max(0.25, Math.min(10, viewScale * factor));
     const rect = canvasWrap.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -275,6 +282,7 @@ export default function AnnotateImageSimple(container, props) {
     if (isAltHeld) return "grab";
     if (activeTool === "select") return "default";
     if (activeTool === "hand") return "grab";
+    if (activeTool === "paint") return "none";
     return "crosshair";
   }
 
@@ -567,6 +575,20 @@ export default function AnnotateImageSimple(container, props) {
       ctx.lineWidth = LINE_WIDTH_SECONDARY / displayScale;
       ctx.setLineDash(DASH_LASSO.map((v) => v / displayScale));
       ctx.strokeRect(mx1, my1, mw, mh);
+      ctx.restore();
+    }
+
+    // Paint brush cursor ring — drawn last so it's always on top, hidden while stroking
+    if (activeTool === "paint" && paintCursorPos && paintCursorOver && !currentStroke) {
+      const [hx, hy] = paintCursorPos;
+      const r = (toolSettings.paint.size ?? DEFAULT_PAINT_SIZE) / 2;
+      const lw = 1 / displayScale;
+      ctx.save();
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.beginPath(); ctx.arc(hx, hy, r + lw, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
   }
@@ -985,7 +1007,9 @@ export default function AnnotateImageSimple(container, props) {
   canvas.addEventListener("pointercancel", onPointerUp);
   canvas.addEventListener("mousemove", onMouseHover);
   canvas.addEventListener("mouseleave", () => {
-    if (hoverId || hoverGroupId) { hoverId = null; hoverGroupId = null; renderCanvas(); }
+    const needsRender = hoverId || hoverGroupId || paintCursorOver;
+    hoverId = null; hoverGroupId = null; paintCursorOver = false;
+    if (needsRender) renderCanvas();
   });
 
   // Track on wrapper (not container) so hotkeys still fire when widget is reparented into the modal.
@@ -1028,6 +1052,20 @@ export default function AnnotateImageSimple(container, props) {
 
   // Handles pointerdown: pan, zoom drag, transform handles, hit selection, shape drawing.
   function onPointerDown(e) {
+    // Middle button (Wacom barrel "hand" / mouse wheel click) → pan.
+    // Must be before the button !== 0 guard to prevent browser auto-scroll mode.
+    if (e.button === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      canvas.setPointerCapture(e.pointerId);
+      isPointerDown = true;
+      isPanning = true;
+      panStartX = e.clientX - panX;
+      panStartY = e.clientY - panY;
+      canvas.style.cursor = "grabbing";
+      return;
+    }
+
     if (e.button !== 0) return;
     e.stopPropagation();
     canvas.setPointerCapture(e.pointerId);
@@ -1278,8 +1316,11 @@ export default function AnnotateImageSimple(container, props) {
       // Deselect any selection and start new stroke
       currentValue = { ...currentValue, selected_ids: [] };
       rebuildSettings();
-      const sz = toolSettings.paint.size;
-      currentStroke = { color: toolSettings.paint.color, size: sz, points: [[cx, cy, sz]] };
+      const baseSize = toolSettings.paint.size;
+      const usePressure = (toolSettings.paint.pressure ?? false) && e.pointerType !== "mouse";
+      const pMin = toolSettings.paint.pressureMin ?? 1;
+      const sz = usePressure ? pMin + (e.pressure ** 2) * (baseSize - pMin) : baseSize;
+      currentStroke = { color: toolSettings.paint.color, size: baseSize, points: [[cx, cy, sz]] };
       lastPtTime = performance.now(); lastPtX = cx; lastPtY = cy; velSmoothed = 0;
       // Draw initial dot directly without a full re-render
       ctx.save();
@@ -1403,17 +1444,21 @@ export default function AnnotateImageSimple(container, props) {
     const [cx, cy] = screenToCanvas(e);
 
     if (activeTool === "paint" && currentStroke) {
+      paintCursorPos = [cx, cy];
       const pts = currentStroke.points;
       const last = pts[pts.length - 1];
       if (Math.hypot(cx - last[0], cy - last[1]) < 2) return; // skip micro-moves
-      // Velocity-based size
       const now = performance.now();
       const dt = Math.max(1, now - lastPtTime);
       const dist = Math.hypot(cx - lastPtX, cy - lastPtY);
       velSmoothed = velSmoothed * 0.5 + (dist / dt) * 0.5;
-      const baseSize = currentStroke.size;
-      const sz = Math.max(baseSize * 0.25, baseSize / (1 + velSmoothed * 0.4));
       lastPtTime = now; lastPtX = cx; lastPtY = cy;
+      const baseSize = currentStroke.size;
+      const usePressure = (toolSettings.paint.pressure ?? false) && e.pointerType !== "mouse";
+      const pMin = toolSettings.paint.pressureMin ?? 1;
+      const sz = usePressure
+        ? pMin + (e.pressure ** 2) * (baseSize - pMin)
+        : Math.max(baseSize * 0.25, baseSize / (1 + velSmoothed * 0.4));
       // Draw variable-width segment incrementally: trapezoid + endpoint circle
       const pr = (last[2] ?? baseSize) / 2, cr = sz / 2;
       ctx.save();
@@ -1866,7 +1911,13 @@ export default function AnnotateImageSimple(container, props) {
       hoverGroupId = null;
     }
     canvas.style.cursor = _cursorForPos(cx, cy);
-    if (hoverId !== prevHoverId || hoverGroupId !== prevHoverGroupId) renderCanvas();
+    if (activeTool === "paint") {
+      paintCursorPos = [cx, cy];
+      paintCursorOver = true;
+      renderCanvas();
+    } else if (hoverId !== prevHoverId || hoverGroupId !== prevHoverGroupId) {
+      renderCanvas();
+    }
   }
 
   // Double-click to edit text (works in both text and select tools)

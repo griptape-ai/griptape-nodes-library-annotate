@@ -4,7 +4,7 @@ export const DEFAULT_COLOR         = "#ff0000";
 
 export const DEFAULT_PAINT_SIZE    = 8;
 export const MIN_PAINT_SIZE        = 1;
-export const MAX_PAINT_SIZE        = 80;
+export const MAX_PAINT_SIZE        = 160;
 
 export const DEFAULT_TEXT_SIZE     = 48;
 export const MIN_TEXT_SIZE         = 8;
@@ -90,7 +90,7 @@ export function defaultData() {
     overrides: {},
     active_tool: "select",
     tool_settings: {
-      paint:   { color: DEFAULT_COLOR, size: DEFAULT_PAINT_SIZE },
+      paint:   { color: DEFAULT_COLOR, size: DEFAULT_PAINT_SIZE, pressure: false, pressureMin: 0 },
       text:    { color: DEFAULT_COLOR, font_size: DEFAULT_TEXT_SIZE, text_align: "left", bg_color: "" },
       arrow:   { color: DEFAULT_COLOR, width: DEFAULT_ARROW_WIDTH, arrow_size: DEFAULT_ARROW_SIZE, has_start_arrow: false, has_end_arrow: true, is_bezier: false, taper: false },
       rect:    { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "" },

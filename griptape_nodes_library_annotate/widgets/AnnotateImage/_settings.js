@@ -223,6 +223,57 @@ export function createSettings(settingsArea, {
       renderCanvas();
       if (doEmit) emit();
     });
+    if (activeTool === "paint") {
+      const sliderRow = settingsArea.lastChild;
+      const paintColor = toolSettings.paint.color || DEFAULT_COLOR;
+      // Inline color swatch — sits between the value readout and pressure icon
+      const colorWrap = document.createElement("div");
+      colorWrap.style.cssText = "position:relative;display:flex;align-items:center;flex-shrink:0;";
+      const colorBtn = document.createElement("div");
+      colorBtn.className = "ais-color-btn";
+      colorBtn.style.background = paintColor;
+      addTooltip(colorBtn, "Stroke color");
+      const colorInput = document.createElement("input");
+      colorInput.type = "color"; colorInput.value = paintColor; colorInput.className = "ais-color-input";
+      colorInput.addEventListener("input", () => {
+        colorBtn.style.background = colorInput.value;
+        const s = getState();
+        s.toolSettings.paint.color = colorInput.value;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas();
+      });
+      colorInput.addEventListener("change", () => emit());
+      colorBtn.addEventListener("click", () => colorInput.click());
+      colorWrap.appendChild(colorBtn); colorWrap.appendChild(colorInput);
+      sliderRow.appendChild(colorWrap);
+      // Pressure toggle icon
+      const pressureOn = toolSettings.paint.pressure ?? false;
+      const pressureBtn = document.createElement("button");
+      pressureBtn.className = "ais-toggle-btn" + (pressureOn ? " active" : "");
+      addTooltip(pressureBtn, "Pressure sensitivity (tablet/stylus only)");
+      pressureBtn.style.cssText = "width:26px;height:26px;flex-shrink:0;";
+      pressureBtn.appendChild(mkIcon("pressure", 14));
+      pressureBtn.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        const s = getState();
+        s.toolSettings.paint.pressure = !(s.toolSettings.paint.pressure ?? false);
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        rebuild();
+        emit();
+      });
+      sliderRow.appendChild(pressureBtn);
+      // Min size slider — only visible when pressure is on
+      if (pressureOn) {
+        const currentMin = toolSettings.paint.pressureMin ?? 1;
+        const currentMax = toolSettings.paint.size ?? DEFAULT_PAINT_SIZE;
+        _buildSizeSlider("Min", 0, Math.max(1, currentMax - 1), currentMin, (sz, doEmit) => {
+          const s = getState();
+          s.toolSettings.paint.pressureMin = sz;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          if (doEmit) emit();
+        });
+      }
+    }
     if (activeTool === "arrow") {
       const arrowSizeVal = ts.arrow_size ?? DEFAULT_ARROW_SIZE;
       _buildSizeSlider("Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE, arrowSizeVal, (sz, doEmit) => {
@@ -234,22 +285,24 @@ export function createSettings(settingsArea, {
       });
     }
     const color = ts.color || DEFAULT_COLOR;
-    _buildColorSwatch(color, (col, doEmit) => {
-      const s = getState();
-      s.toolSettings[activeTool].color = col;
-      setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-      if (activeTool === "text" && s.textEditId) {
-        s.textInput.style.color = col;
-        setCurrentValue({
-          ...getState().currentValue,
-          annotations: getState().currentValue.annotations.map((a) =>
-            a.id === s.textEditId ? { ...a, color: col } : a
-          ),
-        });
-        renderCanvas();
-      }
-      if (doEmit) emit();
-    });
+    if (activeTool !== "paint") {
+      _buildColorSwatch(color, (col, doEmit) => {
+        const s = getState();
+        s.toolSettings[activeTool].color = col;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        if (activeTool === "text" && s.textEditId) {
+          s.textInput.style.color = col;
+          setCurrentValue({
+            ...getState().currentValue,
+            annotations: getState().currentValue.annotations.map((a) =>
+              a.id === s.textEditId ? { ...a, color: col } : a
+            ),
+          });
+          renderCanvas();
+        }
+        if (doEmit) emit();
+      });
+    }
     if (isShape) {
       _buildAlphaColorSwatch(ts.fill_color || "", "Fill color", "No fill", (col, doEmit) => {
         const s = getState();
