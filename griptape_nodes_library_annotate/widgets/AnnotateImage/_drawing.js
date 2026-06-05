@@ -114,8 +114,17 @@ export function createDrawing(getState) {
     // Shift glyphs down within the bg rect so they appear vertically centered (leading distributed equally above and below).
     // The bg rect stays anchored at ann.x,ann.y so it matches the tx frame exactly.
     const topShift = (lineHeight - bgDesc) / 2;
+
+    // Anchor offset: shifts the text box so x/y pin to the chosen horizontal/vertical edge.
+    const anchorH = ann.anchor_h || "left";
+    const anchorV = ann.anchor_v || "top";
+    const xOff = anchorH === "center" ? -maxW / 2 : anchorH === "right" ? -maxW : 0;
+    const yOff = anchorV === "middle" ? -(lineHeight * lines.length) / 2 : anchorV === "bottom" ? -(lineHeight * lines.length) : 0;
+
     ctx.translate(ann.x || 0, ann.y || 0);
     ctx.rotate(ann.rotation || 0);
+    ctx.translate(xOff, yOff);
+
     if (ann.bg_color) {
       const pad = fontSize * 0.15;
       ctx.fillStyle = ann.bg_color;
@@ -285,8 +294,11 @@ export function createDrawing(getState) {
   function drawRect(ann, selected) {
     const { ctx, displayScale, hoverId } = getState();
     const hw = (ann.w || 10) / 2, hh = (ann.h || 10) / 2;
+    const ah = ann.anchor_h || "center", av = ann.anchor_v || "middle";
+    const cx = (ann.x || 0) + (ah === "left" ? hw : ah === "right" ? -hw : 0);
+    const cy = (ann.y || 0) + (av === "top" ? hh : av === "bottom" ? -hh : 0);
     ctx.save();
-    ctx.translate(ann.x || 0, ann.y || 0);
+    ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
     ctx.strokeStyle = ann.color || DEFAULT_COLOR;
@@ -304,8 +316,11 @@ export function createDrawing(getState) {
   function drawEllipse(ann, selected) {
     const { ctx, displayScale, hoverId } = getState();
     const rx = Math.max(0.5, (ann.w || 10) / 2), ry = Math.max(0.5, (ann.h || 10) / 2);
+    const ah = ann.anchor_h || "center", av = ann.anchor_v || "middle";
+    const cx = (ann.x || 0) + (ah === "left" ? rx : ah === "right" ? -rx : 0);
+    const cy = (ann.y || 0) + (av === "top" ? ry : av === "bottom" ? -ry : 0);
     ctx.save();
-    ctx.translate(ann.x || 0, ann.y || 0);
+    ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
     ctx.strokeStyle = ann.color || DEFAULT_COLOR;
