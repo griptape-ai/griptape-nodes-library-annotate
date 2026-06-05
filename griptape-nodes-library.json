@@ -46,6 +46,28 @@
                     { "type": "lifecycle_stage", "stage": "BETA" }
                 ]
             }
+        },
+        {
+            "class_name": "DetectionsToAnnotations",
+            "file_path": "griptape_nodes_library_annotate/detections_to_annotations.py",
+            "metadata": {
+                "category": "image",
+                "description": "Convert bounding-box detection results (face detectors, YOLO, object detectors) into annotation data for the Annotate Image node",
+                "display_name": "Detections to Annotations",
+                "icon": "scan-face",
+                "group": "annotate",
+                "tags": [
+                    "annotate",
+                    "detection",
+                    "face",
+                    "yolo",
+                    "bounding box",
+                    "object detection"
+                ],
+                "declarations": [
+                    { "type": "lifecycle_stage", "stage": "BETA" }
+                ]
+            }
         }
     ]
 }
