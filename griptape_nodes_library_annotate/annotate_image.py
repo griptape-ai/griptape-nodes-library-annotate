@@ -218,7 +218,7 @@ class AnnotateImage(DataNode):
             n = len(pts)
             if n == 1:
                 r = radii[0]
-                draw.ellipse([pts[0][0]-r, pts[0][1]-r, pts[0][0]+r, pts[0][1]+r], fill=color)
+                draw.ellipse([pts[0][0] - r, pts[0][1] - r, pts[0][0] + r, pts[0][1] + r], fill=color)
                 continue
 
             # Draw additively: per-segment trapezoids + interior circles + half-circle caps.
@@ -226,35 +226,43 @@ class AnnotateImage(DataNode):
             # which create bowtie quads at sharp corners that even-odd fill renders as spikes).
             # Interior circles round the joints between segments. Half-circle caps match JS.
             def _half_arc(acx: float, acy: float, r: float, start_a: float, steps: int = 12) -> list:
-                return [(acx + r * math.cos(start_a + math.pi * k / steps),
-                         acy + r * math.sin(start_a + math.pi * k / steps))
-                        for k in range(steps + 1)]
+                return [
+                    (
+                        acx + r * math.cos(start_a + math.pi * k / steps),
+                        acy + r * math.sin(start_a + math.pi * k / steps),
+                    )
+                    for k in range(steps + 1)
+                ]
 
             # Start cap — half-circle facing backward along first segment
             a0 = math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0])
             draw.polygon(_half_arc(pts[0][0], pts[0][1], radii[0], a0 + math.pi / 2), fill=color)
 
             for i in range(n - 1):
-                dx = pts[i+1][0] - pts[i][0]
-                dy = pts[i+1][1] - pts[i][1]
+                dx = pts[i + 1][0] - pts[i][0]
+                dy = pts[i + 1][1] - pts[i][1]
                 seg_len = math.hypot(dx, dy)
                 nx, ny = (dy / seg_len, -dx / seg_len) if seg_len > 0.001 else (0.0, 1.0)
-                ri, ri1 = radii[i], radii[i+1]
-                draw.polygon([
-                    (pts[i][0]   + nx*ri,  pts[i][1]   + ny*ri),
-                    (pts[i+1][0] + nx*ri1, pts[i+1][1] + ny*ri1),
-                    (pts[i+1][0] - nx*ri1, pts[i+1][1] - ny*ri1),
-                    (pts[i][0]   - nx*ri,  pts[i][1]   - ny*ri),
-                ], fill=color)
+                ri, ri1 = radii[i], radii[i + 1]
+                draw.polygon(
+                    [
+                        (pts[i][0] + nx * ri, pts[i][1] + ny * ri),
+                        (pts[i + 1][0] + nx * ri1, pts[i + 1][1] + ny * ri1),
+                        (pts[i + 1][0] - nx * ri1, pts[i + 1][1] - ny * ri1),
+                        (pts[i][0] - nx * ri, pts[i][1] - ny * ri),
+                    ],
+                    fill=color,
+                )
                 # Interior circle rounds the joint to the next segment
                 if i + 1 < n - 1:
-                    r = radii[i+1]
-                    draw.ellipse([pts[i+1][0]-r, pts[i+1][1]-r,
-                                  pts[i+1][0]+r, pts[i+1][1]+r], fill=color)
+                    r = radii[i + 1]
+                    draw.ellipse(
+                        [pts[i + 1][0] - r, pts[i + 1][1] - r, pts[i + 1][0] + r, pts[i + 1][1] + r], fill=color
+                    )
 
             # End cap — half-circle facing forward along last segment
-            an = math.atan2(pts[n-1][1] - pts[n-2][1], pts[n-1][0] - pts[n-2][0])
-            draw.polygon(_half_arc(pts[n-1][0], pts[n-1][1], radii[n-1], an - math.pi / 2), fill=color)
+            an = math.atan2(pts[n - 1][1] - pts[n - 2][1], pts[n - 1][0] - pts[n - 2][0])
+            draw.polygon(_half_arc(pts[n - 1][0], pts[n - 1][1], radii[n - 1], an - math.pi / 2), fill=color)
 
     def _draw_text(self, draw: ImageDraw.ImageDraw, ann: dict, overlay: Image.Image | None = None) -> None:
         text = ann.get("text", "")
