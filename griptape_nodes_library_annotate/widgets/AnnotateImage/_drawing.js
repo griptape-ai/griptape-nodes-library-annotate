@@ -26,23 +26,49 @@ export function createDrawing(getState) {
       const pts = stroke.points || [];
       if (!pts.length) continue;
       ctx.fillStyle = stroke.color || DEFAULT_COLOR;
-      const r0 = ((pts[0][2] ?? (stroke.size || DEFAULT_PAINT_SIZE)) * sizeScale) / 2;
-      ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], r0, 0, Math.PI * 2); ctx.fill();
-      for (let i = 1; i < pts.length; i++) {
-        const px = pts[i-1][0], py = pts[i-1][1], pr = ((pts[i-1][2] ?? (stroke.size || DEFAULT_PAINT_SIZE)) * sizeScale) / 2;
-        const qx = pts[i][0],   qy = pts[i][1],   qr = ((pts[i][2]   ?? (stroke.size || DEFAULT_PAINT_SIZE)) * sizeScale) / 2;
-        ctx.beginPath(); ctx.arc(qx, qy, qr, 0, Math.PI * 2); ctx.fill();
-        const dx = qx - px, dy = qy - py, len = Math.hypot(dx, dy);
-        if (len > 0) {
-          const nx = -dy / len, ny = dx / len;
-          ctx.beginPath();
-          ctx.moveTo(px + nx * pr, py + ny * pr);
-          ctx.lineTo(qx + nx * qr, qy + ny * qr);
-          ctx.lineTo(qx - nx * qr, qy - ny * qr);
-          ctx.lineTo(px - nx * pr, py - ny * pr);
-          ctx.closePath(); ctx.fill();
-        }
+      const n = pts.length;
+      const getR = (i) => Math.max(0.5, ((pts[i][2] ?? (stroke.size || DEFAULT_PAINT_SIZE)) * sizeScale) / 2);
+
+      if (n === 1) {
+        const r = getR(0);
+        ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], r, 0, Math.PI * 2); ctx.fill();
+        continue;
       }
+
+      // Smoothed tangent at each point via central differences — eliminates per-segment
+      // normal discontinuities that made individual trapezoids visible on curved strokes.
+      const tang = [];
+      for (let i = 0; i < n; i++) {
+        const dx = i === 0 ? pts[1][0]-pts[0][0] : i === n-1 ? pts[n-1][0]-pts[n-2][0] : pts[i+1][0]-pts[i-1][0];
+        const dy = i === 0 ? pts[1][1]-pts[0][1] : i === n-1 ? pts[n-1][1]-pts[n-2][1] : pts[i+1][1]-pts[i-1][1];
+        const len = Math.hypot(dx, dy);
+        tang.push(len > 0.001 ? [dx/len, dy/len] : [1, 0]);
+      }
+
+      // Left and right outline points (visual left/right in screen space)
+      const L = tang.map(([tx, ty], i) => [pts[i][0] + ty*getR(i), pts[i][1] - tx*getR(i)]);
+      const R = tang.map(([tx, ty], i) => [pts[i][0] - ty*getR(i), pts[i][1] + tx*getR(i)]);
+
+      const a0 = Math.atan2(tang[0][1],    tang[0][0]);
+      const an = Math.atan2(tang[n-1][1],  tang[n-1][0]);
+
+      ctx.beginPath();
+      // Start cap: arc from R[0] → L[0] going backward around the stroke start
+      ctx.arc(pts[0][0], pts[0][1], getR(0), a0 + Math.PI/2, a0 - Math.PI/2, false);
+      // Left outline forward — smooth via quadratic bezier through midpoints
+      for (let i = 0; i < n - 1; i++) {
+        ctx.quadraticCurveTo(L[i][0], L[i][1], (L[i][0]+L[i+1][0])/2, (L[i][1]+L[i+1][1])/2);
+      }
+      ctx.lineTo(L[n-1][0], L[n-1][1]);
+      // End cap: arc from L[n-1] → R[n-1] going forward around the stroke tip
+      ctx.arc(pts[n-1][0], pts[n-1][1], getR(n-1), an - Math.PI/2, an + Math.PI/2, false);
+      // Right outline backward — smooth via quadratic bezier through midpoints
+      for (let i = n - 1; i > 0; i--) {
+        ctx.quadraticCurveTo(R[i][0], R[i][1], (R[i][0]+R[i-1][0])/2, (R[i][1]+R[i-1][1])/2);
+      }
+      ctx.lineTo(R[0][0], R[0][1]);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 

@@ -185,40 +185,76 @@ class AnnotateImage(DataNode):
 
     def _draw_paint(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
         cx, cy = self._paint_natural_center(ann)
-        tx = ann.get("x", 0) or 0
-        ty = ann.get("y", 0) or 0
-        sx = ann.get("scaleX", 1) or 1
-        sy = ann.get("scaleY", 1) or 1
-        rot = ann.get("rotation", 0) or 0
+        tx_off = float(ann.get("x", 0) or 0)
+        ty_off = float(ann.get("y", 0) or 0)
+        sx = float(ann.get("scaleX", 1) or 1)
+        sy = float(ann.get("scaleY", 1) or 1)
+        rot = float(ann.get("rotation", 0) or 0)
         cos_r, sin_r = math.cos(rot), math.sin(rot)
 
         def xform(nx: float, ny: float) -> tuple[float, float]:
             lx, ly = (nx - cx) * sx, (ny - cy) * sy
-            return cx + tx + lx * cos_r - ly * sin_r, cy + ty + lx * sin_r + ly * cos_r
+            return cx + tx_off + lx * cos_r - ly * sin_r, cy + ty_off + lx * sin_r + ly * cos_r
 
         size_scale = float(ann.get("sizeScale", 1.0) or 1.0)
-        # sx/sy scale both point positions (via xform) and brush radius
         transform_scale = math.sqrt(abs(sx * sy))
         effective_scale = size_scale * transform_scale
+
         for stroke in ann.get("strokes", []):
-            points = stroke.get("points", [])
-            if not points:
+            pts_raw = stroke.get("points", [])
+            if not pts_raw:
                 continue
             color = self._parse_color(stroke.get("color", "#ff0000"))
-            base_size = max(1, float(stroke.get("size", 8)))
-            for i, pt in enumerate(points):
-                px, py = xform(pt[0], pt[1])
-                raw_sz = pt[2] if len(pt) > 2 and pt[2] is not None else base_size
-                sz = max(1, raw_sz * effective_scale)
-                r = sz / 2
-                draw.ellipse([px - r, py - r, px + r, py + r], fill=color)
-                if i > 0:
-                    ppx, ppy = xform(points[i - 1][0], points[i - 1][1])
-                    prev = points[i - 1]
-                    raw_sz2 = prev[2] if len(prev) > 2 and prev[2] is not None else base_size
-                    sz2 = max(1, raw_sz2 * effective_scale)
-                    w = max(1, int((sz + sz2) / 2))
-                    draw.line([ppx, ppy, px, py], fill=color, width=w)
+            base_size = max(1.0, float(stroke.get("size", 8)))
+
+            pts: list[tuple[float, float]] = []
+            radii: list[float] = []
+            for pt in pts_raw:
+                px, py = xform(float(pt[0]), float(pt[1]))
+                raw_sz = float(pt[2]) if len(pt) > 2 and pt[2] is not None else base_size
+                pts.append((px, py))
+                radii.append(max(0.5, raw_sz * effective_scale / 2))
+
+            n = len(pts)
+            if n == 1:
+                r = radii[0]
+                draw.ellipse([pts[0][0]-r, pts[0][1]-r, pts[0][0]+r, pts[0][1]+r], fill=color)
+                continue
+
+            # Draw additively: per-segment trapezoids + interior circles + half-circle caps.
+            # Per-segment normals are always non-self-intersecting (unlike smooth tangents,
+            # which create bowtie quads at sharp corners that even-odd fill renders as spikes).
+            # Interior circles round the joints between segments. Half-circle caps match JS.
+            def _half_arc(acx: float, acy: float, r: float, start_a: float, steps: int = 12) -> list:
+                return [(acx + r * math.cos(start_a + math.pi * k / steps),
+                         acy + r * math.sin(start_a + math.pi * k / steps))
+                        for k in range(steps + 1)]
+
+            # Start cap — half-circle facing backward along first segment
+            a0 = math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0])
+            draw.polygon(_half_arc(pts[0][0], pts[0][1], radii[0], a0 + math.pi / 2), fill=color)
+
+            for i in range(n - 1):
+                dx = pts[i+1][0] - pts[i][0]
+                dy = pts[i+1][1] - pts[i][1]
+                seg_len = math.hypot(dx, dy)
+                nx, ny = (dy / seg_len, -dx / seg_len) if seg_len > 0.001 else (0.0, 1.0)
+                ri, ri1 = radii[i], radii[i+1]
+                draw.polygon([
+                    (pts[i][0]   + nx*ri,  pts[i][1]   + ny*ri),
+                    (pts[i+1][0] + nx*ri1, pts[i+1][1] + ny*ri1),
+                    (pts[i+1][0] - nx*ri1, pts[i+1][1] - ny*ri1),
+                    (pts[i][0]   - nx*ri,  pts[i][1]   - ny*ri),
+                ], fill=color)
+                # Interior circle rounds the joint to the next segment
+                if i + 1 < n - 1:
+                    r = radii[i+1]
+                    draw.ellipse([pts[i+1][0]-r, pts[i+1][1]-r,
+                                  pts[i+1][0]+r, pts[i+1][1]+r], fill=color)
+
+            # End cap — half-circle facing forward along last segment
+            an = math.atan2(pts[n-1][1] - pts[n-2][1], pts[n-1][0] - pts[n-2][0])
+            draw.polygon(_half_arc(pts[n-1][0], pts[n-1][1], radii[n-1], an - math.pi / 2), fill=color)
 
     def _draw_text(self, draw: ImageDraw.ImageDraw, ann: dict, overlay: Image.Image | None = None) -> None:
         text = ann.get("text", "")
