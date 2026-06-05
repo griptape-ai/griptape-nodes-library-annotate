@@ -29,7 +29,7 @@ def _default_annotation_data() -> dict:
         "active_tool": "select",
         "tool_settings": {
             "paint": {"color": "#ff0000", "size": 8},
-            "text": {"color": "#ff0000", "font_size": 48},
+            "text": {"color": "#ffffff", "font_size": 48, "bg_color": "#FF0000C2"},
             "arrow": {
                 "color": "#ff0000",
                 "width": 8,
