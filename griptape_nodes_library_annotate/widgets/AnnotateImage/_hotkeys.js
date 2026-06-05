@@ -112,7 +112,7 @@ export function setupHotkeys(getState, actions) {
     }
     // Adjust active tool settings
     if (activeTool === "paint") {
-      toolSettings.paint.size = Math.max(MIN_PAINT_SIZE, Math.min(MAX_PAINT_SIZE, (toolSettings.paint.size ?? DEFAULT_PAINT_SIZE) + delta));
+      toolSettings.paint.size = Math.max(MIN_PAINT_SIZE, Math.min(MAX_PAINT_SIZE, (toolSettings.paint.size ?? DEFAULT_PAINT_SIZE) + delta * 5));
       setCurrentValue({ ...currentValue, tool_settings: { ...toolSettings } });
       rebuildSettings(); emit();
     } else if (activeTool === "arrow") {

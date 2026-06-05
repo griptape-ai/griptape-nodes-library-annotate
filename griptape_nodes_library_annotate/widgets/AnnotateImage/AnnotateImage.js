@@ -93,6 +93,7 @@ export default function AnnotateImageSimple(container, props) {
   let dragState = null;
   let lastPtTime = 0, lastPtX = 0, lastPtY = 0, velSmoothed = 0;
   let paintCursorPos = null;
+  let paintCursorOver = false;
 
   // text edit state
   let textInput = null;
@@ -252,7 +253,12 @@ export default function AnnotateImageSimple(container, props) {
   // ── zoom via scroll wheel ─────────────────────────────────────────────────
   canvasWrap.addEventListener("wheel", (e) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    // Normalize across deltaMode (pixel / line / page) then scale continuously.
+    // This prevents Wacom barrel buttons and high-resolution trackpads from
+    // over-shooting with large or rapid deltas.
+    const raw = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    const clamped = Math.max(-300, Math.min(300, raw));
+    const factor = Math.pow(1.0015, -clamped);
     const newVS = Math.max(0.25, Math.min(10, viewScale * factor));
     const rect = canvasWrap.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -572,17 +578,16 @@ export default function AnnotateImageSimple(container, props) {
       ctx.restore();
     }
 
-    // Paint brush cursor ring — drawn last so it's always on top
-    if (activeTool === "paint" && paintCursorPos) {
+    // Paint brush cursor ring — drawn last so it's always on top, hidden while stroking
+    if (activeTool === "paint" && paintCursorPos && paintCursorOver && !currentStroke) {
       const [hx, hy] = paintCursorPos;
       const r = (toolSettings.paint.size ?? DEFAULT_PAINT_SIZE) / 2;
       const lw = 1 / displayScale;
       ctx.save();
-      ctx.strokeStyle = "rgba(255,255,255,0.85)";
-      ctx.lineWidth = lw * 2;
-      ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = "rgba(0,0,0,0.7)";
       ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.beginPath(); ctx.arc(hx, hy, r + lw, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
       ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
@@ -1002,8 +1007,8 @@ export default function AnnotateImageSimple(container, props) {
   canvas.addEventListener("pointercancel", onPointerUp);
   canvas.addEventListener("mousemove", onMouseHover);
   canvas.addEventListener("mouseleave", () => {
-    const needsRender = hoverId || hoverGroupId || paintCursorPos;
-    hoverId = null; hoverGroupId = null; paintCursorPos = null;
+    const needsRender = hoverId || hoverGroupId || paintCursorOver;
+    hoverId = null; hoverGroupId = null; paintCursorOver = false;
     if (needsRender) renderCanvas();
   });
 
@@ -1047,6 +1052,20 @@ export default function AnnotateImageSimple(container, props) {
 
   // Handles pointerdown: pan, zoom drag, transform handles, hit selection, shape drawing.
   function onPointerDown(e) {
+    // Middle button (Wacom barrel "hand" / mouse wheel click) → pan.
+    // Must be before the button !== 0 guard to prevent browser auto-scroll mode.
+    if (e.button === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      canvas.setPointerCapture(e.pointerId);
+      isPointerDown = true;
+      isPanning = true;
+      panStartX = e.clientX - panX;
+      panStartY = e.clientY - panY;
+      canvas.style.cursor = "grabbing";
+      return;
+    }
+
     if (e.button !== 0) return;
     e.stopPropagation();
     canvas.setPointerCapture(e.pointerId);
@@ -1894,6 +1913,7 @@ export default function AnnotateImageSimple(container, props) {
     canvas.style.cursor = _cursorForPos(cx, cy);
     if (activeTool === "paint") {
       paintCursorPos = [cx, cy];
+      paintCursorOver = true;
       renderCanvas();
     } else if (hoverId !== prevHoverId || hoverGroupId !== prevHoverGroupId) {
       renderCanvas();
