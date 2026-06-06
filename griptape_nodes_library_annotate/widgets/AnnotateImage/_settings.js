@@ -2,6 +2,7 @@
 // createSettings(settingsArea, deps) → { buildToolSettings, buildAnnotationSettings, buildMultiSettings }
 
 import { mkIcon } from './_icons.js';
+import { reorderAnnotations } from './_object_actions.js';
 import {
   DEFAULT_COLOR,
   DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT,
@@ -10,6 +11,7 @@ import {
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
   DEFAULT_ARROW_SIZE, MIN_ARROW_SIZE, MAX_ARROW_SIZE,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
+  SEL_COLOR_RGB, LAYER_HOVER_OPACITY,
 } from './_styles.js';
 
 export function createSettings(settingsArea, {
@@ -298,6 +300,80 @@ export function createSettings(settingsArea, {
       });
     }
     settingsArea.appendChild(anchorBtn);
+
+    // ── object order ───────────────────────────────────────────────────────
+    const { activeTool: _orderTool, currentValue: _orderVal } = getState();
+    const _orderSelIds = _orderVal.selected_ids || [];
+    const _orderEnabled = _orderTool === "select" && _orderSelIds.length > 0;
+
+    const orderBtn = document.createElement("button");
+    orderBtn.className = "ais-toggle-btn";
+    addTooltip(orderBtn, _orderEnabled ? "Object order" : "Object order (select an object to enable)");
+    orderBtn.appendChild(mkIcon("list-chevrons-up-down", 14));
+    orderBtn.style.cssText = "width:26px;height:26px;" + (_orderEnabled ? "" : "opacity:0.3;pointer-events:none;");
+
+    if (_orderEnabled) {
+      let _orderPopup = null;
+
+      function _dismissOrderPopup() {
+        if (_orderPopup) { _orderPopup.remove(); _orderPopup = null; }
+        document.removeEventListener("pointerdown", _outsideOrderClick, true);
+      }
+      function _outsideOrderClick(e) {
+        if (_orderPopup && !_orderPopup.contains(e.target)) _dismissOrderPopup();
+      }
+
+      orderBtn.addEventListener("pointerdown", (e) => {
+        e.stopPropagation(); e.preventDefault(); orderBtn.blur();
+        if (_orderPopup) { _dismissOrderPopup(); return; }
+
+        _orderPopup = document.createElement("div");
+        _orderPopup.style.cssText = [
+          "position:fixed", "background:var(--popover,#1e1e1e)",
+          "border:1px solid var(--border,#444)", "border-radius:6px",
+          "box-shadow:0 4px 16px rgba(0,0,0,0.5)", "z-index:10000",
+          "overflow:hidden", "min-width:160px",
+          "font-family:sans-serif", "font-size:12px",
+        ].join(";");
+
+        const ORDER_ITEMS = [
+          { label: "Bring to Front", action: "front",    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>' },
+          { label: "Bring Forward",  action: "forward",  icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>' },
+          { label: "Send Backward",  action: "backward", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>' },
+          { label: "Send to Back",   action: "back",     icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>' },
+        ];
+
+        for (const { label, action, icon } of ORDER_ITEMS) {
+          const item = document.createElement("div");
+          item.style.cssText = "padding:6px 14px;cursor:pointer;color:var(--foreground,#eee);white-space:nowrap;display:flex;align-items:center;gap:8px;";
+          item.innerHTML = `<span style="flex-shrink:0;display:flex;align-items:center;">${icon}</span><span>${label}</span>`;
+          item.addEventListener("pointerover", () => { item.style.background = `rgba(${SEL_COLOR_RGB},${LAYER_HOVER_OPACITY})`; });
+          item.addEventListener("pointerout",  () => { item.style.background = ""; });
+          item.addEventListener("pointerdown", (ev) => {
+            ev.stopPropagation();
+            _dismissOrderPopup();
+            const { currentValue: cv } = getState();
+            const newAnns = reorderAnnotations(cv.annotations || [], _orderSelIds, action);
+            setCurrentValue({ ...cv, annotations: newAnns });
+            emit(); rebuild(); renderCanvas();
+          });
+          _orderPopup.appendChild(item);
+        }
+
+        document.body.appendChild(_orderPopup);
+        const bRect = orderBtn.getBoundingClientRect();
+        _orderPopup.style.top = `${bRect.bottom + 4}px`;
+        requestAnimationFrame(() => {
+          const pw = _orderPopup.offsetWidth;
+          let left = bRect.left;
+          if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+          _orderPopup.style.left = `${left}px`;
+        });
+        setTimeout(() => document.addEventListener("pointerdown", _outsideOrderClick, true), 0);
+      });
+    }
+
+    settingsArea.appendChild(orderBtn);
 
     // ── separator ──────────────────────────────────────────────────────────
     const sep = document.createElement("div");

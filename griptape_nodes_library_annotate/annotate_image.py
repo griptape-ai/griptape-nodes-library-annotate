@@ -150,10 +150,16 @@ class AnnotateImage(DataNode):
             # Accept full annotation_data dict from an upstream node's annotation_data output.
             # Compute the effective (merged) annotations so overrides and deletions are resolved.
             imported = self._effective_annotations(value)
+            # Preserve upstream layers so the downstream user can toggle their visibility.
+            # Only keep layers that have at least one annotation in the resolved set
+            # (hidden-upstream layers have no annotations so exposing them would be misleading).
+            upstream_layers = value.get("layers") or []
+            imported_layer_ids = {a.get("layer_id") for a in imported if a.get("layer_id")}
+            imported_layers = [l for l in upstream_layers if l.get("id") in imported_layer_ids]
             data = self.get_parameter_value("output_annotation_data") or _default_annotation_data()
             if not isinstance(data, dict):
                 data = _default_annotation_data()
-            new_data = {**data, "imported_annotations": imported}
+            new_data = {**data, "imported_annotations": imported, "imported_layers": imported_layers}
             self.set_parameter_value("output_annotation_data", new_data)
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
@@ -483,19 +489,62 @@ class AnnotateImage(DataNode):
         draw.ellipse(bbox, fill=fill, outline=color, width=width)
 
     def _effective_annotations(self, annotation_data: dict) -> list:
-        """Return imported (with overrides applied, deleted ones skipped) + local annotations."""
+        """Return imported (with overrides applied, deleted ones skipped) + local annotations,
+        filtered by layer visibility and sorted by layer order (back to front)."""
         imported = annotation_data.get("imported_annotations", []) or []
         overrides = annotation_data.get("overrides", {}) or {}
         local = annotation_data.get("annotations", []) or []
+
+        # Apply imported_layer_overrides: downstream users can hide upstream layers.
+        imp_layer_ovr = annotation_data.get("imported_layer_overrides") or {}
+        hidden_imp_layers = {lid for lid, ov in imp_layer_ovr.items() if ov.get("visible") is False}
 
         merged_imported = []
         for ann in imported:
             ov = overrides.get(ann.get("id", ""), {})
             if ov.get("deleted"):
                 continue
-            merged_imported.append({**ann, **{k: v for k, v in ov.items() if k != "deleted"}})
+            merged = {**ann, **{k: v for k, v in ov.items() if k != "deleted"}}
+            if merged.get("layer_id") in hidden_imp_layers:
+                continue
+            merged_imported.append(merged)
 
-        return merged_imported + local
+        all_anns = merged_imported + local
+
+        layers = annotation_data.get("layers", []) or []
+        if not layers:
+            return all_anns
+
+        default_layer_id = layers[0].get("id") if layers else None
+
+        # Filter out annotations on hidden layers
+        hidden_ids = {l["id"] for l in layers if not l.get("visible", True)}
+        if hidden_ids:
+            all_anns = [a for a in all_anns if (a.get("layer_id") or default_layer_id) not in hidden_ids]
+
+        # Sort by unified layer_stack order (mirrors getEffectiveLayerStack in _layers.js).
+        imported_layers = annotation_data.get("imported_layers") or []
+        stack = annotation_data.get("layer_stack") or []
+        if not stack:
+            stack = [l["id"] for l in imported_layers] + [l["id"] for l in layers]
+        stack_rank = {lid: i for i, lid in enumerate(stack)}
+
+        # Orphaned layer_id (from a disconnected upstream) → default layer so annotations still render.
+        all_known_layer_ids = set(stack)
+        def _resolve_layer(a):
+            lid = a.get("layer_id")
+            if lid and lid in all_known_layer_ids:
+                return lid
+            return default_layer_id
+
+        all_anns.sort(key=lambda a: stack_rank.get(_resolve_layer(a), 0))
+
+        # Isolation: if a layer is isolated only its annotations are rendered
+        isolated_id = annotation_data.get("isolated_layer_id")
+        if isolated_id:
+            all_anns = [a for a in all_anns if (a.get("layer_id") or default_layer_id) == isolated_id]
+
+        return all_anns
 
     def process(self) -> None:
         image_artifact = self.get_parameter_value("input_image")
