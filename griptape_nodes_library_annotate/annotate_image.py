@@ -157,7 +157,7 @@ class AnnotateImage(DataNode):
             upstream_layers = value.get("layers") or []
             upstream_stack = value.get("layer_stack") or []
             imported_layer_ids = {a.get("layer_id") for a in imported if a.get("layer_id")}
-            upstream_layer_map = {l.get("id"): l for l in upstream_layers}
+            upstream_layer_map = {layer.get("id"): layer for layer in upstream_layers}
             if upstream_stack:
                 # Use stack order, filtering to only layers with live annotations
                 imported_layers = [
@@ -166,7 +166,7 @@ class AnnotateImage(DataNode):
                     if lid in upstream_layer_map and lid in imported_layer_ids
                 ]
             else:
-                imported_layers = [l for l in upstream_layers if l.get("id") in imported_layer_ids]
+                imported_layers = [layer for layer in upstream_layers if layer.get("id") in imported_layer_ids]
             data = self.get_parameter_value("output_annotation_data") or _default_annotation_data()
             if not isinstance(data, dict):
                 data = _default_annotation_data()
@@ -538,7 +538,7 @@ class AnnotateImage(DataNode):
         default_layer_id = layers[0].get("id") if layers else None
 
         # Filter out annotations on hidden layers
-        hidden_ids = {l["id"] for l in layers if not l.get("visible", True)}
+        hidden_ids = {layer["id"] for layer in layers if not layer.get("visible", True)}
         if hidden_ids:
             all_anns = [a for a in all_anns if (a.get("layer_id") or default_layer_id) not in hidden_ids]
 
@@ -546,7 +546,7 @@ class AnnotateImage(DataNode):
         imported_layers = annotation_data.get("imported_layers") or []
         stack = annotation_data.get("layer_stack") or []
         if not stack:
-            stack = [l["id"] for l in imported_layers] + [l["id"] for l in layers]
+            stack = [layer["id"] for layer in imported_layers] + [layer["id"] for layer in layers]
         stack_rank = {lid: i for i, lid in enumerate(stack)}
 
         # Orphaned layer_id (from a disconnected upstream) → default layer so annotations still render.
