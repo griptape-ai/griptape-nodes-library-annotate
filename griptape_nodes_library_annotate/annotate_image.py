@@ -172,10 +172,10 @@ class AnnotateImage(DataNode):
 
     def _parse_color(self, color_str: str, opacity: float = 1.0) -> tuple[int, int, int, int]:
         try:
-            r, g, b, _ = parse_color_to_rgba(color_str)
+            r, g, b, a = parse_color_to_rgba(color_str)
         except Exception:
-            r, g, b = 255, 0, 0
-        return (r, g, b, int(255 * opacity))
+            r, g, b, a = 255, 0, 0, 255
+        return (r, g, b, int(a * opacity))
 
     def _paint_natural_center(self, ann: dict) -> tuple[float, float]:
         if ann.get("cx") is not None and ann.get("cy") is not None:
@@ -330,8 +330,17 @@ class AnnotateImage(DataNode):
                 )
             d.text((tx, ty), text, font=font, fill=color, spacing=spacing, align=text_align)
 
-        if not rotation or overlay is None:
+        if overlay is None:
             _draw_on(draw, x, y)
+            return
+
+        if not rotation:
+            # Draw to a temp image and alpha_composite onto overlay so semi-transparent
+            # fills (bg_color etc.) blend correctly — ImageDraw sets pixels directly and
+            # doesn't composite, so transparency is lost if we draw straight to overlay.
+            temp = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+            _draw_on(ImageDraw.Draw(temp), x, y)
+            overlay.alpha_composite(temp)
             return
 
         # Rotated text: draw onto an oversized temp so long text isn't clipped before
@@ -574,16 +583,25 @@ class AnnotateImage(DataNode):
         all_annotations = self._effective_annotations(annotation_data)
         for ann in all_annotations:
             ann_type = ann.get("type")
-            if ann_type == "paint":
-                self._draw_paint(draw, ann)
-            elif ann_type == "text":
+            # Draw each annotation onto its own transparent temp image, then
+            # alpha_composite onto the overlay. This ensures semi-transparent
+            # fills and colors blend correctly — ImageDraw sets pixels directly
+            # and doesn't composite, so transparency is lost without this step.
+            if ann_type == "text":
+                # Text handles its own temp/composite internally (needed for rotation)
                 self._draw_text(draw, ann, overlay, canvas_w, canvas_h)
-            elif ann_type == "arrow":
-                self._draw_arrow(draw, ann)
-            elif ann_type == "rect":
-                self._draw_rect(draw, ann, canvas_w, canvas_h)
-            elif ann_type == "ellipse":
-                self._draw_ellipse(draw, ann, canvas_w, canvas_h)
+            else:
+                ann_temp = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+                ann_draw = ImageDraw.Draw(ann_temp)
+                if ann_type == "paint":
+                    self._draw_paint(ann_draw, ann)
+                elif ann_type == "arrow":
+                    self._draw_arrow(ann_draw, ann)
+                elif ann_type == "rect":
+                    self._draw_rect(ann_draw, ann, canvas_w, canvas_h)
+                elif ann_type == "ellipse":
+                    self._draw_ellipse(ann_draw, ann, canvas_w, canvas_h)
+                overlay.alpha_composite(ann_temp)
 
         canvas = Image.alpha_composite(bg, overlay)
 
