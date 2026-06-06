@@ -31,7 +31,7 @@
             "file_path": "griptape_nodes_library_annotate/annotate_image.py",
             "metadata": {
                 "category": "image",
-                "description": "Annotate a single image with paint, text, and arrows",
+                "description": "Annotate an image with paint, text, arrows, and shapes. Supports layers and chaining annotation data between nodes.",
                 "display_name": "Annotate Image",
                 "icon": "pencil",
                 "group": "annotate",
