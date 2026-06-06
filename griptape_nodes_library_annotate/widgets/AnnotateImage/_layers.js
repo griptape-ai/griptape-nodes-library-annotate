@@ -9,8 +9,6 @@
 import { mkIcon } from './_icons.js';
 import { SEL_COLOR_RGB, IMP_COLOR_RGB } from './_styles.js';
 
-export const DEFAULT_LAYER = { id: "layer-default", name: "Layer 1", visible: true };
-
 // Returns the unified ordered list of all layer IDs (back=index 0, front=last).
 // If layer_stack is stored and valid, uses it. Otherwise defaults to imported-below-local.
 // New layers not yet in the stack are added (imported at bottom, local at top).
@@ -32,15 +30,21 @@ export function getEffectiveLayerStack(cv) {
 }
 
 // Ensures currentValue has a valid layers array, active_layer_id, and layer_stack.
+// The default layer gets a unique ID (not a hardcoded constant) so that two annotation
+// nodes never share the same layer ID when one imports from the other.
 export function ensureLayers(cv) {
-  const layers = cv.layers?.length ? cv.layers : [{ ...DEFAULT_LAYER }];
+  const layers = cv.layers?.length ? cv.layers : [{
+    id: `layer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: "Layer 1",
+    visible: true,
+  }];
   const validActive = layers.find((l) => l.id === cv.active_layer_id);
   const patched = { ...cv, layers, active_layer_id: validActive ? cv.active_layer_id : layers[0].id };
   // Materialise layer_stack so it's always stored explicitly.
   return { ...patched, layer_stack: getEffectiveLayerStack(patched) };
 }
 
-export function createLayersPanel(buttonEl, labelEl, {
+export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
   addTooltip,
   uid,
   getState,
@@ -91,7 +95,7 @@ export function createLayersPanel(buttonEl, labelEl, {
   // ── data helpers ───────────────────────────────────────────────────────────
 
   function _cv()      { return getState().currentValue; }
-  function _layers()  { const cv = _cv(); return cv.layers?.length ? cv.layers : [{ ...DEFAULT_LAYER }]; }
+  function _layers()  { const cv = _cv(); return cv.layers?.length ? cv.layers : [{ id: "layer-default", name: "Layer 1", visible: true }]; }
   function _activeId() {
     const cv = _cv();
     const aid = cv.active_layer_id;
@@ -360,7 +364,7 @@ export function createLayersPanel(buttonEl, labelEl, {
       "border-left:3px solid " + (isActive ? `rgba(${SEL_COLOR_RGB},0.85)` : "transparent") + ";" +
       (otherIsIsolated ? "opacity:0.35;" : "");
 
-    row.addEventListener("pointerover", () => { if (!isActive) row.style.background = "rgba(255,255,255,0.04)"; });
+    row.addEventListener("pointerover", () => { if (!isActive) row.style.background = "rgba(255,255,255,0.05)"; });
     row.addEventListener("pointerout",  () => { row.style.background = ""; });
     row.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button")) return;
@@ -555,7 +559,7 @@ export function createLayersPanel(buttonEl, labelEl, {
       `border-left:3px solid ${isActive ? `rgba(${IMP_COLOR_RGB},0.85)` : "transparent"};` +
       (isVisible ? "" : "opacity:0.5;");
 
-    row.addEventListener("pointerover", () => { if (!isActive) row.style.background = "rgba(255,255,255,0.04)"; });
+    row.addEventListener("pointerover", () => { if (!isActive) row.style.background = "rgba(255,255,255,0.05)"; });
     row.addEventListener("pointerout",  () => { row.style.background = ""; });
     row.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button")) return;
@@ -664,15 +668,21 @@ export function createLayersPanel(buttonEl, labelEl, {
       `border:1px solid rgba(${IMP_COLOR_RGB},0.3);background:var(--muted);`;
     row.appendChild(thumb);
 
-    // Name (read-only)
+    // Name + "imported" badge
     const nameWrap = document.createElement("div");
-    nameWrap.style.cssText = "flex:1;min-width:0;";
+    nameWrap.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;";
     const nameEl = document.createElement("span");
     nameEl.style.cssText =
       "display:block;font-size:12px;color:var(--foreground);" +
       "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
     nameEl.textContent = layer.name;
+    const importedBadge = document.createElement("span");
+    importedBadge.style.cssText =
+      `font-size:9px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;` +
+      `color:rgba(${IMP_COLOR_RGB},0.7);line-height:1.2;`;
+    importedBadge.textContent = "imported";
     nameWrap.appendChild(nameEl);
+    nameWrap.appendChild(importedBadge);
     row.appendChild(nameWrap);
 
     // Visibility toggle (writes to imported_layer_overrides)
@@ -866,9 +876,17 @@ export function createLayersPanel(buttonEl, labelEl, {
 
   function update() {
     if (!labelEl) return;
+    const cv = _cv();
+    const activeId = _activeId();
     const layers = _layers();
-    const active = layers.find((l) => l.id === _activeId()) || layers[0];
-    labelEl.textContent = active?.name ?? DEFAULT_LAYER.name;
+    const importedLayers = cv.imported_layers || [];
+    const isImported = !!importedLayers.find((l) => l.id === activeId);
+    const active = layers.find((l) => l.id === activeId)
+      || importedLayers.find((l) => l.id === activeId)
+      || layers[0];
+    labelEl.textContent = active?.name ?? "Layer 1";
+    // Amber icon when on an imported layer, muted otherwise
+    if (iconWrapEl) iconWrapEl.style.color = isImported ? `rgb(${IMP_COLOR_RGB})` : "";
   }
 
   buttonEl.addEventListener("pointerdown", (e) => {

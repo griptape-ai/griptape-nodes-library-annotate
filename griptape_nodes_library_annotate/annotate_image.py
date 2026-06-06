@@ -151,11 +151,22 @@ class AnnotateImage(DataNode):
             # Compute the effective (merged) annotations so overrides and deletions are resolved.
             imported = self._effective_annotations(value)
             # Preserve upstream layers so the downstream user can toggle their visibility.
+            # Order them by the upstream layer_stack so render order is maintained.
             # Only keep layers that have at least one annotation in the resolved set
             # (hidden-upstream layers have no annotations so exposing them would be misleading).
             upstream_layers = value.get("layers") or []
+            upstream_stack = value.get("layer_stack") or []
             imported_layer_ids = {a.get("layer_id") for a in imported if a.get("layer_id")}
-            imported_layers = [l for l in upstream_layers if l.get("id") in imported_layer_ids]
+            upstream_layer_map = {l.get("id"): l for l in upstream_layers}
+            if upstream_stack:
+                # Use stack order, filtering to only layers with live annotations
+                imported_layers = [
+                    upstream_layer_map[lid]
+                    for lid in upstream_stack
+                    if lid in upstream_layer_map and lid in imported_layer_ids
+                ]
+            else:
+                imported_layers = [l for l in upstream_layers if l.get("id") in imported_layer_ids]
             data = self.get_parameter_value("output_annotation_data") or _default_annotation_data()
             if not isinstance(data, dict):
                 data = _default_annotation_data()
@@ -540,6 +551,7 @@ class AnnotateImage(DataNode):
 
         # Orphaned layer_id (from a disconnected upstream) → default layer so annotations still render.
         all_known_layer_ids = set(stack)
+
         def _resolve_layer(a):
             lid = a.get("layer_id")
             if lid and lid in all_known_layer_ids:

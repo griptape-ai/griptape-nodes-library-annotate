@@ -168,6 +168,19 @@ export default function AnnotateImageSimple(container, props) {
     return sorted;
   }
 
+  // True when the active layer is locked — all drawing and selection is disabled.
+  function _isActiveLayerLocked() {
+    const layers = currentValue.layers || [];
+    const importedLayers = currentValue.imported_layers || [];
+    const importedLayerOvr = currentValue.imported_layer_overrides || {};
+    const activeId = currentValue.active_layer_id || layers[0]?.id;
+    const localLayer = layers.find((l) => l.id === activeId);
+    if (localLayer) return !!localLayer.locked;
+    const impLayer = importedLayers.find((l) => l.id === activeId);
+    if (impLayer) return !!(importedLayerOvr[impLayer.id]?.locked ?? impLayer.locked);
+    return false;
+  }
+
   // Like _effectiveAnnotations() but restricted for hit testing:
   // - Only annotations on the active layer are hittable.
   // - Annotations on locked layers are never hittable.
@@ -372,7 +385,7 @@ export default function AnnotateImageSimple(container, props) {
     "font-family:sans-serif;box-sizing:border-box;overflow:hidden;";
 
   // ── Toolbar (sidebar + header bar) — see _toolbar.js ─────────────────────
-  const { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, toolBtns,
+  const { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns,
     setActiveTool, setResetViewEnabled, updateExpandIcon } = createToolbar({
     addTooltip: _addTooltip,
     activeTool,
@@ -460,8 +473,9 @@ export default function AnnotateImageSimple(container, props) {
   function _currentToolCursor() {
     if (activeTool === "zoom") return isAltHeld ? "zoom-out" : "zoom-in";
     if (isAltHeld) return "grab";
-    if (activeTool === "select") return "default";
     if (activeTool === "hand") return "grab";
+    if (_isActiveLayerLocked() && activeTool !== "hand" && activeTool !== "zoom") return "not-allowed";
+    if (activeTool === "select") return "default";
     if (activeTool === "paint") return "none";
     return "crosshair";
   }
@@ -1370,6 +1384,9 @@ export default function AnnotateImageSimple(container, props) {
         canvas.style.cursor = "grabbing"; renderCanvas(); return;
       }
     }
+
+    // Locked layer: block all drawing and object interaction
+    if (_isActiveLayerLocked() && activeTool !== "hand" && activeTool !== "zoom") return;
 
     if (activeTool === "text") {
       if (textEditId) { commitTextEdit(); return; } // clicking away commits edit
@@ -2395,7 +2412,7 @@ export default function AnnotateImageSimple(container, props) {
   updateHud = _hudMod.update;
   dismissLayerPopup = _hudMod.dismissLayerPopup;
 
-  const _layersMod = createLayersPanel(layersBtn, layersLabelEl, {
+  const _layersMod = createLayersPanel(layersBtn, layersLabelEl, layersIconWrap, {
     addTooltip: _addTooltip,
     uid: _uid,
     getState: () => ({ activeTool, currentValue }),

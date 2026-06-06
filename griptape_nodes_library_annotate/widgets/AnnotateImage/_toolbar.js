@@ -75,7 +75,7 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
   // Left section: tool / annotation settings — content managed by _settings.js
   const settingsArea = document.createElement("div");
   settingsArea.style.cssText =
-    "display:flex;align-items:center;gap:6px;flex:1;min-width:0;overflow:hidden;";
+    "display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow:hidden;";
   headerBar.appendChild(settingsArea);
 
   // Right section (inner-left): object actions (group, layers, delete, reset)
@@ -182,5 +182,5 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     expandBtn.appendChild(mkIcon(isExpanded ? "contract" : "expand", 15));
   }
 
-  return { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, toolBtns, setActiveTool, setResetViewEnabled, updateExpandIcon };
+  return { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns, setActiveTool, setResetViewEnabled, updateExpandIcon };
 }
