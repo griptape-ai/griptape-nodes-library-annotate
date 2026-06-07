@@ -166,10 +166,10 @@ class AnnotateImage(DataNode):
 
     def _parse_color(self, color_str: str, opacity: float = 1.0) -> tuple[int, int, int, int]:
         try:
-            r, g, b, _ = parse_color_to_rgba(color_str)
+            r, g, b, a = parse_color_to_rgba(color_str)
         except Exception:
-            r, g, b = 255, 0, 0
-        return (r, g, b, int(255 * opacity))
+            r, g, b, a = 255, 0, 0, 255
+        return (r, g, b, int(a * opacity))
 
     def _paint_natural_center(self, ann: dict) -> tuple[float, float]:
         if ann.get("cx") is not None and ann.get("cy") is not None:
