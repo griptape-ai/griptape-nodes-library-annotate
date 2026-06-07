@@ -2,6 +2,7 @@
 // createSettings(settingsArea, deps) → { buildToolSettings, buildAnnotationSettings, buildMultiSettings }
 
 import { mkIcon } from './_icons.js';
+import { createColorPicker } from './_colorpicker.js';
 import {
   DEFAULT_COLOR,
   DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT,
@@ -24,28 +25,6 @@ export function createSettings(settingsArea, {
   emit,
   rebuild,          // rebuildSettings()
 }) {
-  let colorPickerEl = null;
-
-  // Appends a color swatch + hidden <input type=color> to settingsArea.
-  // onChange(color, doEmit) — doEmit=false during drag, true on commit.
-  function _buildColorSwatch(color, onChange) {
-    const wrap = document.createElement("div");
-    wrap.style.cssText = "position:relative;display:flex;align-items:center;";
-    const swatch = document.createElement("div");
-    swatch.className = "ais-color-btn"; swatch.style.background = color;
-    colorPickerEl = document.createElement("input");
-    colorPickerEl.type = "color"; colorPickerEl.value = color;
-    colorPickerEl.className = "ais-color-input";
-    colorPickerEl.addEventListener("input", () => {
-      swatch.style.background = colorPickerEl.value;
-      onChange(colorPickerEl.value, false);
-    });
-    colorPickerEl.addEventListener("change", () => onChange(colorPickerEl.value, true));
-    swatch.addEventListener("click", () => colorPickerEl.click());
-    wrap.appendChild(swatch); wrap.appendChild(colorPickerEl);
-    settingsArea.appendChild(wrap);
-  }
-
   // Formats a number for display in slider labels.
   function _fmtNum(v) {
     const n = Number(v);
@@ -69,44 +48,6 @@ export function createSettings(settingsArea, {
     slider.addEventListener("input", () => { const sz = Number(slider.value); valLbl.textContent = _fmtNum(sz); onChange(sz, false); });
     slider.addEventListener("change", () => onChange(Number(slider.value), true));
     wrap.appendChild(lbl); wrap.appendChild(slider); wrap.appendChild(valLbl);
-    settingsArea.appendChild(wrap);
-  }
-
-  // Appends a color swatch + opacity slider + clear button, encoding result as #rrggbbaa.
-  // colorTip / clearTip control the tooltip labels so it works for both fill and background.
-  function _buildAlphaColorSwatch(color, colorTip, clearTip, onChange) {
-    let hexRgb = "#ffffff";
-    let alpha = 100;
-    if (color && color.length === 9) {
-      hexRgb = color.slice(0, 7);
-      alpha = Math.round(parseInt(color.slice(7, 9), 16) / 255 * 100);
-    } else if (color && color.length === 7) {
-      hexRgb = color;
-    }
-    const buildHexa = () => hexRgb + Math.round(alpha / 100 * 255).toString(16).padStart(2, "0");
-    const wrap = document.createElement("div");
-    wrap.style.cssText = "position:relative;display:flex;align-items:center;gap:2px;";
-    const swatch = document.createElement("div");
-    swatch.className = "ais-color-btn";
-    addTooltip(swatch, colorTip);
-    swatch.style.background = color || "repeating-conic-gradient(#888 0% 25%,#333 0% 50%) 0 0/8px 8px";
-    const pickerInput = document.createElement("input");
-    pickerInput.type = "color"; pickerInput.value = hexRgb; pickerInput.className = "ais-color-input";
-    pickerInput.addEventListener("input", () => { hexRgb = pickerInput.value; swatch.style.background = buildHexa(); onChange(buildHexa(), false); });
-    pickerInput.addEventListener("change", () => onChange(buildHexa(), true));
-    swatch.addEventListener("click", () => pickerInput.click());
-    const opacitySlider = document.createElement("input");
-    opacitySlider.type = "range"; opacitySlider.className = "ais-range";
-    opacitySlider.min = 0; opacitySlider.max = 100; opacitySlider.value = alpha;
-    opacitySlider.style.width = "50px";
-    opacitySlider.addEventListener("input", () => { alpha = Number(opacitySlider.value); swatch.style.background = buildHexa(); onChange(buildHexa(), false); });
-    opacitySlider.addEventListener("change", () => onChange(buildHexa(), true));
-    const clearBtn = document.createElement("button");
-    clearBtn.className = "ais-tool-btn"; addTooltip(clearBtn, clearTip);
-    clearBtn.style.cssText = "width:16px;height:16px;font-size:11px;padding:0;";
-    clearBtn.textContent = "✕";
-    clearBtn.addEventListener("pointerdown", (e) => { e.stopPropagation(); swatch.style.background = "repeating-conic-gradient(#888 0% 25%,#333 0% 50%) 0 0/8px 8px"; onChange("", true); });
-    wrap.appendChild(swatch); wrap.appendChild(pickerInput); wrap.appendChild(opacitySlider); wrap.appendChild(clearBtn);
     settingsArea.appendChild(wrap);
   }
 
@@ -367,25 +308,19 @@ export function createSettings(settingsArea, {
       const sliderRow = settingsArea.lastChild;
       const paintColor = toolSettings.paint.color || DEFAULT_COLOR;
       // Inline color swatch — sits between the value readout and pressure icon
-      const colorWrap = document.createElement("div");
-      colorWrap.style.cssText = "position:relative;display:flex;align-items:center;flex-shrink:0;";
-      const colorBtn = document.createElement("div");
-      colorBtn.className = "ais-color-btn";
-      colorBtn.style.background = paintColor;
-      addTooltip(colorBtn, "Stroke color");
-      const colorInput = document.createElement("input");
-      colorInput.type = "color"; colorInput.value = paintColor; colorInput.className = "ais-color-input";
-      colorInput.addEventListener("input", () => {
-        colorBtn.style.background = colorInput.value;
-        const s = getState();
-        s.toolSettings.paint.color = colorInput.value;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas();
+      const paintPicker = createColorPicker({
+        color: paintColor,
+        label: "Stroke color",
+        addTooltip,
+        onChange: (col, doEmit) => {
+          const s = getState();
+          s.toolSettings.paint.color = col || DEFAULT_COLOR;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          renderCanvas();
+          if (doEmit) emit();
+        },
       });
-      colorInput.addEventListener("change", () => emit());
-      colorBtn.addEventListener("click", () => colorInput.click());
-      colorWrap.appendChild(colorBtn); colorWrap.appendChild(colorInput);
-      sliderRow.appendChild(colorWrap);
+      sliderRow.appendChild(paintPicker.el);
       // Pressure toggle icon
       const pressureOn = toolSettings.paint.pressure ?? false;
       const pressureBtn = document.createElement("button");
@@ -424,51 +359,75 @@ export function createSettings(settingsArea, {
         if (doEmit) emit();
       });
     }
-    const color = ts.color || DEFAULT_COLOR;
+    const color = ts.color ?? DEFAULT_COLOR;
     if (activeTool !== "paint") {
-      _buildColorSwatch(color, (col, doEmit) => {
-        const s = getState();
-        s.toolSettings[activeTool].color = col;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        if (activeTool === "text" && s.textEditId) {
-          s.textInput.style.color = col;
-          setCurrentValue({
-            ...getState().currentValue,
-            annotations: getState().currentValue.annotations.map((a) =>
-              a.id === s.textEditId ? { ...a, color: col } : a
-            ),
-          });
-          renderCanvas();
-        }
-        if (doEmit) emit();
+      const hasOutlineNone = isShape || activeTool === "arrow";
+      const toolColorPicker = createColorPicker({
+        color,
+        label: "Color",
+        clearLabel: hasOutlineNone ? "No outline" : null,
+        addTooltip,
+        onChange: (col, doEmit) => {
+          const s = getState();
+          s.toolSettings[activeTool].color = col;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          if (activeTool === "text" && s.textEditId) {
+            s.textInput.style.color = col || DEFAULT_COLOR;
+            setCurrentValue({
+              ...getState().currentValue,
+              annotations: getState().currentValue.annotations.map((a) =>
+                a.id === s.textEditId ? { ...a, color: col } : a
+              ),
+            });
+            renderCanvas();
+          }
+          if (doEmit) emit();
+        },
       });
+      settingsArea.appendChild(toolColorPicker.el);
     }
     if (isShape) {
-      _buildAlphaColorSwatch(ts.fill_color || "", "Fill color", "No fill", (col, doEmit) => {
-        const s = getState();
-        s.toolSettings[activeTool].fill_color = col;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas();
-        if (doEmit) emit();
+      const fillPicker = createColorPicker({
+        color: ts.fill_color || "",
+        hasAlpha: true,
+        label: "Fill color",
+        clearLabel: "No fill",
+        addTooltip,
+        onChange: (col, doEmit) => {
+          const s = getState();
+          s.toolSettings[activeTool].fill_color = col;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          renderCanvas();
+          if (doEmit) emit();
+        },
       });
+      settingsArea.appendChild(fillPicker.el);
     }
     if (activeTool === "text") {
-      _buildAlphaColorSwatch(ts.bg_color || "", "Background color", "No background", (col, doEmit) => {
-        const s = getState();
-        s.toolSettings.text.bg_color = col;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        if (s.textEditId) {
-          setCurrentValue({
-            ...getState().currentValue,
-            annotations: getState().currentValue.annotations.map((a) =>
-              a.id === s.textEditId ? { ...a, bg_color: col } : a
-            ),
-          });
-          if (s.textInput) s.textInput.style.background = col || "transparent";
-        }
-        renderCanvas();
-        if (doEmit) emit();
+      const bgPicker = createColorPicker({
+        color: ts.bg_color || "",
+        hasAlpha: true,
+        label: "Background color",
+        clearLabel: "No background",
+        addTooltip,
+        onChange: (col, doEmit) => {
+          const s = getState();
+          s.toolSettings.text.bg_color = col;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          if (s.textEditId) {
+            setCurrentValue({
+              ...getState().currentValue,
+              annotations: getState().currentValue.annotations.map((a) =>
+                a.id === s.textEditId ? { ...a, bg_color: col } : a
+              ),
+            });
+            if (s.textInput) s.textInput.style.background = col || "transparent";
+          }
+          renderCanvas();
+          if (doEmit) emit();
+        },
       });
+      settingsArea.appendChild(bgPicker.el);
     }
   }
 
@@ -493,7 +452,7 @@ export function createSettings(settingsArea, {
     if (ann.type === "paint") {
       color = (ann.strokes && ann.strokes[0]) ? ann.strokes[0].color : DEFAULT_COLOR;
     } else {
-      color = ann.color || DEFAULT_COLOR;
+      color = ann.color ?? DEFAULT_COLOR;
     }
 
     if (ann.type === "paint") {
@@ -554,45 +513,69 @@ export function createSettings(settingsArea, {
       });
     }
 
-    _buildColorSwatch(color, (col, doEmit) => {
-      applySingleUpdate(ann.id, (a) => {
-        if (a.type === "paint") return { ...a, strokes: (a.strokes || []).map((s) => ({ ...s, color: col })) };
-        return { ...a, color: col };
-      });
-      const s = getState();
-      if (ann.type === "arrow") { s.toolSettings.arrow.color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
-      if (ann.type === "text")  { s.toolSettings.text.color = col;  setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
-      if (ann.type === "paint") { s.toolSettings.paint.color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
-      if (isShape) { s.toolSettings[ann.type].color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
-      const s2 = getState();
-      if (s2.textInput && s2.textEditId === ann.id) {
-        s2.textInput.style.color = col;
-        s2.textInput.style.borderBottomColor = col;
-      }
-      renderCanvas();
-      if (doEmit) emit();
+    const hasOutlineNone = isShape || ann.type === "arrow";
+    const annColorPicker = createColorPicker({
+      color,
+      label: "Color",
+      clearLabel: hasOutlineNone ? "No outline" : null,
+      addTooltip,
+      onChange: (col, doEmit) => {
+        applySingleUpdate(ann.id, (a) => {
+          if (a.type === "paint") return { ...a, strokes: (a.strokes || []).map((s) => ({ ...s, color: col || DEFAULT_COLOR })) };
+          return { ...a, color: col };
+        });
+        const s = getState();
+        if (ann.type === "arrow") { s.toolSettings.arrow.color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
+        if (ann.type === "text")  { s.toolSettings.text.color = col || DEFAULT_COLOR;  setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
+        if (ann.type === "paint") { s.toolSettings.paint.color = col || DEFAULT_COLOR; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
+        if (isShape) { s.toolSettings[ann.type].color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
+        const s2 = getState();
+        if (s2.textInput && s2.textEditId === ann.id) {
+          s2.textInput.style.color = col || DEFAULT_COLOR;
+          s2.textInput.style.borderBottomColor = col || DEFAULT_COLOR;
+        }
+        renderCanvas();
+        if (doEmit) emit();
+      },
     });
+    settingsArea.appendChild(annColorPicker.el);
 
     if (isShape) {
-      _buildAlphaColorSwatch(ann.fill_color || "", "Fill color", "No fill", (col, doEmit) => {
-        applySingleUpdate(ann.id, (a) => ({ ...a, fill_color: col }));
-        const s = getState();
-        s.toolSettings[ann.type].fill_color = col;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas();
-        if (doEmit) emit();
+      const annFillPicker = createColorPicker({
+        color: ann.fill_color || "",
+        hasAlpha: true,
+        label: "Fill color",
+        clearLabel: "No fill",
+        addTooltip,
+        onChange: (col, doEmit) => {
+          applySingleUpdate(ann.id, (a) => ({ ...a, fill_color: col }));
+          const s = getState();
+          s.toolSettings[ann.type].fill_color = col;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          renderCanvas();
+          if (doEmit) emit();
+        },
       });
+      settingsArea.appendChild(annFillPicker.el);
     }
     if (ann.type === "text") {
-      _buildAlphaColorSwatch(ann.bg_color || "", "Background color", "No background", (col, doEmit) => {
-        applySingleUpdate(ann.id, (a) => ({ ...a, bg_color: col }));
-        const s = getState();
-        s.toolSettings.text.bg_color = col;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        if (s.textInput && s.textEditId === ann.id) s.textInput.style.background = col || "transparent";
-        renderCanvas();
-        if (doEmit) emit();
+      const annBgPicker = createColorPicker({
+        color: ann.bg_color || "",
+        hasAlpha: true,
+        label: "Background color",
+        clearLabel: "No background",
+        addTooltip,
+        onChange: (col, doEmit) => {
+          applySingleUpdate(ann.id, (a) => ({ ...a, bg_color: col }));
+          const s = getState();
+          s.toolSettings.text.bg_color = col;
+          setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+          if (s.textInput && s.textEditId === ann.id) s.textInput.style.background = col || "transparent";
+          renderCanvas();
+          if (doEmit) emit();
+        },
       });
+      settingsArea.appendChild(annBgPicker.el);
     }
   }
 
@@ -637,28 +620,43 @@ export function createSettings(settingsArea, {
     let firstColor = DEFAULT_COLOR;
     for (const a of anns) {
       if (a.type === "paint" && a.strokes?.[0]) { firstColor = a.strokes[0].color; break; }
-      if (a.color) { firstColor = a.color; break; }
+      if (a.type !== "paint") { firstColor = a.color ?? DEFAULT_COLOR; break; }
     }
-    _buildColorSwatch(firstColor, (col, doEmit) => {
-      const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
-        if (a.type === "paint") return { ...a, strokes: (a.strokes || []).map((s) => ({ ...s, color: col })) };
-        return { ...a, color: col };
-      });
-      setCurrentValue({ ...getState().currentValue, annotations, overrides });
-      renderCanvas();
-      if (doEmit) emit();
+    const multiColorPicker = createColorPicker({
+      color: firstColor,
+      label: "Color",
+      clearLabel: anns.some((a) => a.type === "rect" || a.type === "ellipse" || a.type === "arrow") ? "No outline" : null,
+      addTooltip,
+      onChange: (col, doEmit) => {
+        const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
+          if (a.type === "paint") return { ...a, strokes: (a.strokes || []).map((s) => ({ ...s, color: col || DEFAULT_COLOR })) };
+          return { ...a, color: col };
+        });
+        setCurrentValue({ ...getState().currentValue, annotations, overrides });
+        renderCanvas();
+        if (doEmit) emit();
+      },
     });
+    settingsArea.appendChild(multiColorPicker.el);
 
     const shapeAnns = anns.filter((a) => a.type === "rect" || a.type === "ellipse");
     if (shapeAnns.length) {
       const firstFill = shapeAnns.find((a) => a.fill_color)?.fill_color || "";
-      _buildAlphaColorSwatch(firstFill, "Fill color", "No fill", (col, doEmit) => {
-        const shapeIds = shapeAnns.map((a) => a.id);
-        const { annotations, overrides } = applyAnnotationMap(shapeIds, (a) => ({ ...a, fill_color: col }));
-        setCurrentValue({ ...getState().currentValue, annotations, overrides });
-        renderCanvas();
-        if (doEmit) emit();
+      const multiFillPicker = createColorPicker({
+        color: firstFill,
+        hasAlpha: true,
+        label: "Fill color",
+        clearLabel: "No fill",
+        addTooltip,
+        onChange: (col, doEmit) => {
+          const shapeIds = shapeAnns.map((a) => a.id);
+          const { annotations, overrides } = applyAnnotationMap(shapeIds, (a) => ({ ...a, fill_color: col }));
+          setCurrentValue({ ...getState().currentValue, annotations, overrides });
+          renderCanvas();
+          if (doEmit) emit();
+        },
       });
+      settingsArea.appendChild(multiFillPicker.el);
     }
   }
 

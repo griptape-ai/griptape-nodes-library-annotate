@@ -301,9 +301,8 @@ export function createDrawing(getState) {
     ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
-    ctx.strokeStyle = ann.color || DEFAULT_COLOR;
     if (ann.fill_color) { ctx.fillStyle = ann.fill_color; ctx.fillRect(-hw, -hh, hw * 2, hh * 2); }
-    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+    if (ann.color) { ctx.strokeStyle = ann.color; ctx.strokeRect(-hw, -hh, hw * 2, hh * 2); }
     if (isHovered(ann) && !selected) {
       const pad = HOVER_PAD / displayScale;
       ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
@@ -323,11 +322,10 @@ export function createDrawing(getState) {
     ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
-    ctx.strokeStyle = ann.color || DEFAULT_COLOR;
     ctx.beginPath();
     ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
     if (ann.fill_color) { ctx.fillStyle = ann.fill_color; ctx.fill(); }
-    ctx.stroke();
+    if (ann.color) { ctx.strokeStyle = ann.color; ctx.stroke(); }
     if (isHovered(ann) && !selected) {
       const pad = HOVER_PAD / displayScale;
       ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
