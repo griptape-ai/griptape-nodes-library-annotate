@@ -548,6 +548,11 @@ class AnnotateImage(DataNode):
 
         canvas = Image.alpha_composite(bg, overlay)
 
+        # Flatten to opaque RGB by compositing onto black. convert("RGB") alone
+        # just drops the alpha channel, turning semi-transparent pixels full-bright.
+        black = Image.new("RGBA", canvas.size, (0, 0, 0, 255))
+        canvas = Image.alpha_composite(black, canvas)
+
         dest = self._output_file.build_file()
         buf = BytesIO()
         canvas.convert("RGB").save(buf, format="PNG")
