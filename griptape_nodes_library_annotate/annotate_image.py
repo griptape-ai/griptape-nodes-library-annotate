@@ -527,16 +527,24 @@ class AnnotateImage(DataNode):
         all_annotations = self._effective_annotations(annotation_data)
         for ann in all_annotations:
             ann_type = ann.get("type")
-            if ann_type == "paint":
-                self._draw_paint(draw, ann)
-            elif ann_type == "text":
+            # Draw each annotation onto its own transparent temp image, then
+            # alpha_composite onto the overlay. ImageDraw sets pixels directly
+            # and doesn't composite, so transparency is lost without this step.
+            if ann_type == "text":
+                # Text handles its own temp/composite internally (needed for rotation)
                 self._draw_text(draw, ann, overlay, canvas_w, canvas_h)
-            elif ann_type == "arrow":
-                self._draw_arrow(draw, ann)
-            elif ann_type == "rect":
-                self._draw_rect(draw, ann, canvas_w, canvas_h)
-            elif ann_type == "ellipse":
-                self._draw_ellipse(draw, ann, canvas_w, canvas_h)
+            else:
+                ann_temp = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+                ann_draw = ImageDraw.Draw(ann_temp)
+                if ann_type == "paint":
+                    self._draw_paint(ann_draw, ann)
+                elif ann_type == "arrow":
+                    self._draw_arrow(ann_draw, ann)
+                elif ann_type == "rect":
+                    self._draw_rect(ann_draw, ann, canvas_w, canvas_h)
+                elif ann_type == "ellipse":
+                    self._draw_ellipse(ann_draw, ann, canvas_w, canvas_h)
+                overlay.alpha_composite(ann_temp)
 
         canvas = Image.alpha_composite(bg, overlay)
 
