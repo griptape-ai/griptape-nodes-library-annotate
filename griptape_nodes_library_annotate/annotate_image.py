@@ -150,10 +150,27 @@ class AnnotateImage(DataNode):
             # Accept full annotation_data dict from an upstream node's annotation_data output.
             # Compute the effective (merged) annotations so overrides and deletions are resolved.
             imported = self._effective_annotations(value)
+            # Preserve upstream layers so the downstream user can toggle their visibility.
+            # Order them by the upstream layer_stack so render order is maintained.
+            # Only keep layers that have at least one annotation in the resolved set
+            # (hidden-upstream layers have no annotations so exposing them would be misleading).
+            upstream_layers = value.get("layers") or []
+            upstream_stack = value.get("layer_stack") or []
+            imported_layer_ids = {a.get("layer_id") for a in imported if a.get("layer_id")}
+            upstream_layer_map = {layer.get("id"): layer for layer in upstream_layers}
+            if upstream_stack:
+                # Use stack order, filtering to only layers with live annotations
+                imported_layers = [
+                    upstream_layer_map[lid]
+                    for lid in upstream_stack
+                    if lid in upstream_layer_map and lid in imported_layer_ids
+                ]
+            else:
+                imported_layers = [layer for layer in upstream_layers if layer.get("id") in imported_layer_ids]
             data = self.get_parameter_value("output_annotation_data") or _default_annotation_data()
             if not isinstance(data, dict):
                 data = _default_annotation_data()
-            new_data = {**data, "imported_annotations": imported}
+            new_data = {**data, "imported_annotations": imported, "imported_layers": imported_layers}
             self.set_parameter_value("output_annotation_data", new_data)
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
@@ -324,8 +341,17 @@ class AnnotateImage(DataNode):
                 )
             d.text((tx, ty), text, font=font, fill=color, spacing=spacing, align=text_align)
 
-        if not rotation or overlay is None:
+        if overlay is None:
             _draw_on(draw, x, y)
+            return
+
+        if not rotation:
+            # Draw to a temp image and alpha_composite onto overlay so semi-transparent
+            # fills (bg_color etc.) blend correctly — ImageDraw sets pixels directly and
+            # doesn't composite, so transparency is lost if we draw straight to overlay.
+            temp = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+            _draw_on(ImageDraw.Draw(temp), x, y)
+            overlay.alpha_composite(temp)
             return
 
         # Rotated text: draw onto an oversized temp so long text isn't clipped before
@@ -485,19 +511,63 @@ class AnnotateImage(DataNode):
         draw.ellipse(bbox, fill=fill, outline=color, width=width)
 
     def _effective_annotations(self, annotation_data: dict) -> list:
-        """Return imported (with overrides applied, deleted ones skipped) + local annotations."""
+        """Return imported (with overrides applied, deleted ones skipped) + local annotations,
+        filtered by layer visibility and sorted by layer order (back to front)."""
         imported = annotation_data.get("imported_annotations", []) or []
         overrides = annotation_data.get("overrides", {}) or {}
         local = annotation_data.get("annotations", []) or []
+
+        # Apply imported_layer_overrides: downstream users can hide upstream layers.
+        imp_layer_ovr = annotation_data.get("imported_layer_overrides") or {}
+        hidden_imp_layers = {lid for lid, ov in imp_layer_ovr.items() if ov.get("visible") is False}
 
         merged_imported = []
         for ann in imported:
             ov = overrides.get(ann.get("id", ""), {})
             if ov.get("deleted"):
                 continue
-            merged_imported.append({**ann, **{k: v for k, v in ov.items() if k != "deleted"}})
+            merged = {**ann, **{k: v for k, v in ov.items() if k != "deleted"}}
+            if merged.get("layer_id") in hidden_imp_layers:
+                continue
+            merged_imported.append(merged)
 
-        return merged_imported + local
+        all_anns = merged_imported + local
+
+        layers = annotation_data.get("layers", []) or []
+        if not layers:
+            return all_anns
+
+        default_layer_id = layers[0].get("id") if layers else None
+
+        # Filter out annotations on hidden layers
+        hidden_ids = {layer["id"] for layer in layers if not layer.get("visible", True)}
+        if hidden_ids:
+            all_anns = [a for a in all_anns if (a.get("layer_id") or default_layer_id) not in hidden_ids]
+
+        # Sort by unified layer_stack order (mirrors getEffectiveLayerStack in _layers.js).
+        imported_layers = annotation_data.get("imported_layers") or []
+        stack = annotation_data.get("layer_stack") or []
+        if not stack:
+            stack = [layer["id"] for layer in imported_layers] + [layer["id"] for layer in layers]
+        stack_rank = {lid: i for i, lid in enumerate(stack)}
+
+        # Orphaned layer_id (from a disconnected upstream) → default layer so annotations still render.
+        all_known_layer_ids = set(stack)
+
+        def _resolve_layer(a):
+            lid = a.get("layer_id")
+            if lid and lid in all_known_layer_ids:
+                return lid
+            return default_layer_id
+
+        all_anns.sort(key=lambda a: stack_rank.get(_resolve_layer(a), 0))
+
+        # Isolation: if a layer is isolated only its annotations are rendered
+        isolated_id = annotation_data.get("isolated_layer_id")
+        if isolated_id:
+            all_anns = [a for a in all_anns if (a.get("layer_id") or default_layer_id) == isolated_id]
+
+        return all_anns
 
     def process(self) -> None:
         image_artifact = self.get_parameter_value("input_image")
@@ -528,7 +598,8 @@ class AnnotateImage(DataNode):
         for ann in all_annotations:
             ann_type = ann.get("type")
             # Draw each annotation onto its own transparent temp image, then
-            # alpha_composite onto the overlay. ImageDraw sets pixels directly
+            # alpha_composite onto the overlay. This ensures semi-transparent
+            # fills and colors blend correctly — ImageDraw sets pixels directly
             # and doesn't composite, so transparency is lost without this step.
             if ann_type == "text":
                 # Text handles its own temp/composite internally (needed for rotation)
