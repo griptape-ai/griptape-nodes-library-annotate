@@ -2003,7 +2003,7 @@ export default function AnnotateImageSimple(container, props) {
         annotations: [...(currentValue.annotations || []), paintAnn],
         selected_ids: [],
       };
-      _emit();
+      _emitDebounced();
       rebuildSettings();
       canvas.focus({ preventScroll: true });
       renderCanvas();
@@ -2245,6 +2245,26 @@ export default function AnnotateImageSimple(container, props) {
     if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
   }
 
+  // Sends the current state without touching _emitSeq (seq already claimed).
+  function _sendState() {
+    if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
+  }
+
+  // Debounced emit for rapid-fire paint strokes. Coalesces bursts into a single send
+  // 400ms after the last stroke, so drawing 50 strokes fires one round-trip instead of 50.
+  // _emitSeq is incremented EAGERLY (before the timer fires) so the stale-roundtrip guard
+  // in handleUpdate correctly blocks echoes of older emits during the debounce window —
+  // otherwise handleUpdate would accept them as "fresh" and overwrite the pending strokes.
+  let _emitTimer = null;
+  function _emitDebounced() {
+    _emitSeq++;
+    clearTimeout(_emitTimer);
+    _emitTimer = setTimeout(() => { _emitTimer = null; _sendState(); }, 400);
+  }
+  function _flushPendingEmit() {
+    if (_emitTimer !== null) { clearTimeout(_emitTimer); _emitTimer = null; _sendState(); }
+  }
+
   // Generates a collision-resistant unique id with a human-readable type prefix.
   function _uid(prefix) {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -2372,6 +2392,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // Tears down all event listeners, observers, and DOM nodes. Called when the widget is unmounted.
   function cleanup() {
+    _flushPendingEmit();
     _closeModal();
     commitTextEdit();
     dismissLayerPopup?.();
