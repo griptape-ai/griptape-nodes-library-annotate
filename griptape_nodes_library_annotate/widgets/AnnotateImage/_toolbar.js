@@ -75,7 +75,7 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
   // Left section: tool / annotation settings — content managed by _settings.js
   const settingsArea = document.createElement("div");
   settingsArea.style.cssText =
-    "display:flex;align-items:center;gap:6px;flex:1;min-width:0;overflow:hidden;";
+    "display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow:hidden;";
   headerBar.appendChild(settingsArea);
 
   // Right section (inner-left): object actions (group, layers, delete, reset)
@@ -84,6 +84,45 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
   objectActionsEl.className = "ais-hud";
   objectActionsEl.style.cssText = "display:none;align-items:center;gap:2px;flex-shrink:0;margin-right:4px;";
   headerBar.appendChild(objectActionsEl);
+
+  // Layers button — always visible, opens the layers panel.
+  // Styled as a status pill so it's clearly a "you are drawing on this layer" indicator,
+  // not just another tool button.
+  const layersDivider = document.createElement("div");
+  layersDivider.style.cssText = "width:1px;height:20px;background:var(--border);margin:0 6px;flex-shrink:0;";
+  headerBar.appendChild(layersDivider);
+
+  const layersBtn = document.createElement("button");
+  layersBtn.style.cssText =
+    "display:flex;align-items:center;gap:5px;padding:3px 9px 3px 7px;height:28px;border:none;cursor:pointer;" +
+    "border-radius:6px;background:var(--muted);color:var(--foreground);" +
+    "transition:background 0.15s;flex-shrink:0;max-width:160px;min-width:0;" +
+    "font-family:inherit;";
+  layersBtn.addEventListener("pointerover", () => { layersBtn.style.background = "var(--accent,rgba(122,157,184,0.2))"; });
+  layersBtn.addEventListener("pointerout",  () => { layersBtn.style.background = "var(--muted)"; });
+
+  const layersIconWrap = document.createElement("span");
+  layersIconWrap.style.cssText = "flex-shrink:0;display:flex;align-items:center;opacity:0.7;";
+  layersIconWrap.appendChild(mkIcon("layers", 13));
+  layersBtn.appendChild(layersIconWrap);
+
+  const layersLabelEl = document.createElement("span");
+  layersLabelEl.style.cssText =
+    "font-size:11px;font-weight:600;color:var(--foreground);" +
+    "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;";
+  layersLabelEl.textContent = "Layer 1";
+  layersBtn.appendChild(layersLabelEl);
+
+  // Chevron ▾
+  const layersChevron = document.createElement("span");
+  layersChevron.style.cssText = "flex-shrink:0;display:flex;align-items:center;opacity:0.45;margin-left:1px;";
+  layersChevron.innerHTML =
+    `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;pointer-events:none;">` +
+    `<path d="m6 9 6 6 6-6"/></svg>`;
+  layersBtn.appendChild(layersChevron);
+
+  addTooltip(layersBtn, "Layers — click to open layer panel");
+  headerBar.appendChild(layersBtn);
 
   // Right section (inner-right): view controls (fit-to-canvas, expand to modal)
   const viewControls = document.createElement("div");
@@ -143,5 +182,5 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     expandBtn.appendChild(mkIcon(isExpanded ? "contract" : "expand", 15));
   }
 
-  return { sidebar, headerBar, settingsArea, objectActionsEl, toolBtns, setActiveTool, setResetViewEnabled, updateExpandIcon };
+  return { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns, setActiveTool, setResetViewEnabled, updateExpandIcon };
 }

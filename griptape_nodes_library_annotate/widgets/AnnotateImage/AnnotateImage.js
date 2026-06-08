@@ -32,6 +32,7 @@ import { setupHotkeys } from './_hotkeys.js';
 import { createSettings } from './_settings.js';
 import { createHud, expandGroupSelection } from './_object_actions.js';
 import { createToolbar } from './_toolbar.js';
+import { createLayersPanel, ensureLayers, getEffectiveLayerStack } from './_layers.js';
 
 // ── main widget ───────────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ export default function AnnotateImageSimple(container, props) {
   } else if (!Array.isArray(currentValue.selected_ids)) {
     currentValue.selected_ids = [];
   }
+  // Ensure at least one layer exists with a valid active_layer_id.
+  currentValue = ensureLayers(currentValue);
 
   let activeTool = currentValue.active_tool || "select";
   let toolSettings = { ...currentValue.tool_settings };
@@ -115,10 +118,104 @@ export default function AnnotateImageSimple(container, props) {
     const imported = currentValue.imported_annotations || [];
     const overrides = currentValue.overrides || {};
     const local = currentValue.annotations || [];
+    // Apply imported_layer_overrides so downstream users can hide upstream layers.
+    const importedLayerOvr = currentValue.imported_layer_overrides || {};
+    const hiddenImportedLayerIds = new Set(
+      Object.entries(importedLayerOvr)
+        .filter(([, ov]) => ov.visible === false)
+        .map(([id]) => id)
+    );
+
     const merged = imported
       .filter((a) => !overrides[a.id]?.deleted)
-      .map((a) => ({ ...a, ...overrides[a.id], _imported: true }));
-    return [...merged, ...local];
+      .map((a) => ({ ...a, ...overrides[a.id], _imported: true }))
+      .filter((a) => !hiddenImportedLayerIds.has(a.layer_id));
+    const all = [...merged, ...local];
+
+    const layers = currentValue.layers || [];
+    if (!layers.length) return all;
+
+    // Annotations with no layer_id (or an orphaned layer_id from a disconnected upstream)
+    // fall back to the default (first local) layer so they remain visible and selectable.
+    const defaultLayerId = layers[0].id;
+    const importedLayersKnown = new Set((currentValue.imported_layers || []).map((l) => l.id));
+    const localLayersKnown   = new Set(layers.map((l) => l.id));
+    const allKnownLayerIds   = new Set([...localLayersKnown, ...importedLayersKnown]);
+
+    const _resolveLayerId = (ann) => {
+      const lid = ann.layer_id;
+      if (!lid || !allKnownLayerIds.has(lid)) return defaultLayerId; // orphaned → default layer
+      return lid;
+    };
+
+    // Filter out annotations belonging to hidden layers.
+    const hiddenIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
+    const visible = hiddenIds.size
+      ? all.filter((a) => !hiddenIds.has(_resolveLayerId(a)))
+      : all;
+
+    // Sort by unified layer_stack order (back=index 0, front=last).
+    const stack = getEffectiveLayerStack(currentValue);
+    const stackRank = new Map(stack.map((id, i) => [id, i]));
+    const sorted = visible.slice().sort((a, b) =>
+      (stackRank.get(_resolveLayerId(a)) ?? 0) - (stackRank.get(_resolveLayerId(b)) ?? 0)
+    );
+
+    // Isolation: if a layer is isolated only its annotations are visible.
+    const isolatedId = currentValue.isolated_layer_id;
+    if (isolatedId) return sorted.filter((a) => _resolveLayerId(a) === isolatedId);
+
+    return sorted;
+  }
+
+  // True when the active layer is locked — all drawing and selection is disabled.
+  function _isActiveLayerLocked() {
+    const layers = currentValue.layers || [];
+    const importedLayers = currentValue.imported_layers || [];
+    const importedLayerOvr = currentValue.imported_layer_overrides || {};
+    const activeId = currentValue.active_layer_id || layers[0]?.id;
+    const localLayer = layers.find((l) => l.id === activeId);
+    if (localLayer) return !!localLayer.locked;
+    const impLayer = importedLayers.find((l) => l.id === activeId);
+    if (impLayer) return !!(importedLayerOvr[impLayer.id]?.locked ?? impLayer.locked);
+    return false;
+  }
+
+  // Like _effectiveAnnotations() but restricted for hit testing:
+  // - Only annotations on the active layer are hittable.
+  // - Annotations on locked layers are never hittable.
+  // - Orphaned layer_id values (from disconnected upstream) are treated as the default layer.
+  function _hittableAnnotations() {
+    const all = _effectiveAnnotations();
+    const layers = currentValue.layers || [];
+    if (!layers.length) return all;
+
+    const defaultLayerId = layers[0].id;
+    const importedLayers = currentValue.imported_layers || [];
+    const allKnownLayerIds = new Set([
+      ...layers.map((l) => l.id),
+      ...importedLayers.map((l) => l.id),
+    ]);
+    // Orphaned layer_id → treat as default layer so annotations remain reachable
+    const _resolve = (ann) => {
+      const lid = ann.layer_id;
+      return (lid && allKnownLayerIds.has(lid)) ? lid : defaultLayerId;
+    };
+
+    const activeLayerId = currentValue.active_layer_id || defaultLayerId;
+
+    // Build locked-layer set
+    const importedLayerOvr = currentValue.imported_layer_overrides || {};
+    const lockedIds = new Set([
+      ...layers.filter((l) => l.locked).map((l) => l.id),
+      ...importedLayers.filter((l) => importedLayerOvr[l.id]?.locked ?? l.locked).map((l) => l.id),
+    ]);
+
+    return all.filter((a) => {
+      const lid = _resolve(a);
+      if (lockedIds.has(lid)) return false;
+      return lid === activeLayerId;
+    });
   }
 
   // Apply mapFn to the given annotation ids, routing imported ones to overrides.
@@ -175,6 +272,63 @@ export default function AnnotateImageSimple(container, props) {
     const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
     const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
     return { ...ann, x: (ann.x ?? 0) * cw / 100, y: (ann.y ?? 0) * ch / 100 };
+  }
+
+  // Thumbnail cache — invalidated by renderCanvas() whenever annotations change.
+  // Prevents re-drawing all layer annotations on every panel re-render (e.g. toggling
+  // visibility or lock triggers _renderPanel() but annotations haven't changed).
+  const _thumbCache = new Map();
+
+  // Renders a layer's annotations into a small canvas element for use as a thumbnail.
+  // Returns an HTMLCanvasElement (2× resolution for crisp display at CSS 38×28).
+  function renderLayerThumb(layerId) {
+    if (_thumbCache.has(layerId)) return _thumbCache.get(layerId);
+
+    const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
+    const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+    const TW = 76, TH = 56; // 2× the 38×28 CSS size
+    const scale = Math.min(TW / cw, TH / ch);
+    const ox = (TW - cw * scale) / 2;
+    const oy = (TH - ch * scale) / 2;
+
+    const offCanvas = document.createElement("canvas");
+    offCanvas.width = TW; offCanvas.height = TH;
+    const offCtx = offCanvas.getContext("2d");
+
+    // Subtle canvas-area background so you can tell where the canvas is
+    offCtx.fillStyle = "rgba(255,255,255,0.05)";
+    offCtx.fillRect(ox, oy, cw * scale, ch * scale);
+
+    offCtx.save();
+    offCtx.translate(ox, oy);
+    offCtx.scale(scale, scale);
+    offCtx.beginPath();
+    offCtx.rect(0, 0, cw, ch);
+    offCtx.clip();
+
+    // Temporary drawing instance pointing at the offscreen context
+    const offDrawing = createDrawing(() => ({
+      ctx: offCtx, displayScale: 1,
+      hoverId: null, hoverGroupId: null, marqueePreviewIds: null,
+    }));
+
+    const layers = currentValue.layers || [];
+    const defaultLayerId = layers[0]?.id;
+    const layerAnns = _effectiveAnnotations()
+      .filter((a) => (a.layer_id ?? defaultLayerId) === layerId);
+
+    for (const rawAnn of layerAnns) {
+      const ann = _resolveAnn(rawAnn);
+      if      (ann.type === "paint")   offDrawing.drawPaint(ann, false);
+      else if (ann.type === "text")    offDrawing.drawText(ann, false);
+      else if (ann.type === "arrow")   offDrawing.drawArrowAnnotation(ann, false);
+      else if (ann.type === "rect")    offDrawing.drawRect(ann, false);
+      else if (ann.type === "ellipse") offDrawing.drawEllipse(ann, false);
+    }
+
+    offCtx.restore();
+    _thumbCache.set(layerId, offCanvas);
+    return offCanvas;
   }
 
   // Creates the origPositions entry for a translate drag.
@@ -239,7 +393,7 @@ export default function AnnotateImageSimple(container, props) {
     "font-family:sans-serif;box-sizing:border-box;overflow:hidden;";
 
   // ── Toolbar (sidebar + header bar) — see _toolbar.js ─────────────────────
-  const { sidebar, headerBar, settingsArea, objectActionsEl, toolBtns,
+  const { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns,
     setActiveTool, setResetViewEnabled, updateExpandIcon } = createToolbar({
     addTooltip: _addTooltip,
     activeTool,
@@ -327,8 +481,9 @@ export default function AnnotateImageSimple(container, props) {
   function _currentToolCursor() {
     if (activeTool === "zoom") return isAltHeld ? "zoom-out" : "zoom-in";
     if (isAltHeld) return "grab";
-    if (activeTool === "select") return "default";
     if (activeTool === "hand") return "grab";
+    if (_isActiveLayerLocked() && activeTool !== "hand" && activeTool !== "zoom") return "not-allowed";
+    if (activeTool === "select") return "default";
     if (activeTool === "paint") return "none";
     return "crosshair";
   }
@@ -380,6 +535,8 @@ export default function AnnotateImageSimple(container, props) {
   // Declared as let so rebuildSettings can reference them before the factories run.
   let updateHud = null;
   let dismissLayerPopup = null;
+  let updateLayersBtn = null;
+  let dismissLayersPanel = null;
   let buildPositionControls = null;
   let buildToolSettings = null;
   let buildAnnotationSettings = null;
@@ -392,6 +549,7 @@ export default function AnnotateImageSimple(container, props) {
     if (!keepLayerPopup) dismissLayerPopup?.();
     _buildTxFrame();
     updateHud?.();
+    updateLayersBtn?.();
     settingsArea.innerHTML = "";
 
     // Determine the active positional annotation (text/rect/ellipse) for the always-visible controls.
@@ -450,6 +608,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // Schedules a canvas redraw via RAF. Increments renderGen so any in-flight render is cancelled.
   function renderCanvas() {
+    _thumbCache.clear();
     const gen = ++renderGen;
     requestAnimationFrame(() => { if (gen === renderGen) _doRender(gen); });
   }
@@ -667,7 +826,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // ── hit testing ───────────────────────────────────────────────────────────
   function hitTest(cx, cy) {
-    const anns = [..._effectiveAnnotations()].reverse();
+    const anns = [..._hittableAnnotations()].reverse();
     for (const rawAnn of anns) {
       const ann = _resolveAnn(rawAnn);
       if (ann.type === "text") {
@@ -1045,6 +1204,7 @@ export default function AnnotateImageSimple(container, props) {
       font_size: toolSettings.text.font_size,
       text_align: toolSettings.text.text_align || "left",
       bg_color: toolSettings.text.bg_color || "",
+      layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
     };
     currentValue = {
       ...currentValue,
@@ -1233,6 +1393,9 @@ export default function AnnotateImageSimple(container, props) {
         canvas.style.cursor = "grabbing"; renderCanvas(); return;
       }
     }
+
+    // Locked layer: block all drawing and object interaction
+    if (_isActiveLayerLocked() && activeTool !== "hand" && activeTool !== "zoom") return;
 
     if (activeTool === "text") {
       if (textEditId) { commitTextEdit(); return; } // clicking away commits edit
@@ -1784,13 +1947,13 @@ export default function AnnotateImageSimple(container, props) {
         // Compute which annotations would be selected so they can be previewed
         const mx1 = Math.min(dragState.startCx, cx), mx2 = Math.max(dragState.startCx, cx);
         const my1 = Math.min(dragState.startCy, cy), my2 = Math.max(dragState.startCy, cy);
-        const directHits = _effectiveAnnotations()
+        const directHits = _hittableAnnotations()
           .filter((a) => _annotationIntersectsRect(a, mx1, my1, mx2, my2)).map((a) => a.id);
-        const groupsHit = new Set(_effectiveAnnotations()
+        const groupsHit = new Set(_hittableAnnotations()
           .filter((a) => directHits.includes(a.id) && a.group_id).map((a) => a.group_id));
         marqueePreviewIds = new Set([
           ...directHits,
-          ..._effectiveAnnotations().filter((a) => groupsHit.has(a.group_id)).map((a) => a.id),
+          ..._hittableAnnotations().filter((a) => groupsHit.has(a.group_id)).map((a) => a.id),
         ]);
       }
       renderCanvas();
@@ -1830,6 +1993,7 @@ export default function AnnotateImageSimple(container, props) {
         cx: b ? (b.minX + b.maxX) / 2 : 0,
         cy: b ? (b.minY + b.maxY) / 2 : 0,
         x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+        layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
       };
       // Paint is a continuous tool — like a brush in Figma/tldraw, you stay in paint
       // mode and keep drawing.  Don't select the stroke or switch tools; the user will
@@ -1839,7 +2003,7 @@ export default function AnnotateImageSimple(container, props) {
         annotations: [...(currentValue.annotations || []), paintAnn],
         selected_ids: [],
       };
-      _emit();
+      _emitDebounced();
       rebuildSettings();
       canvas.focus({ preventScroll: true });
       renderCanvas();
@@ -1861,6 +2025,7 @@ export default function AnnotateImageSimple(container, props) {
           has_end_arrow: ts.has_end_arrow ?? true,
           is_bezier: ts.is_bezier ?? false,
           taper: ts.taper ?? false,
+          layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
         };
         // Discrete object: select it and drop into select mode so the user can
         // immediately reposition/resize — same pattern as tldraw and modern Figma.
@@ -1886,6 +2051,7 @@ export default function AnnotateImageSimple(container, props) {
           w: Math.abs(r.x2 - r.x1), h: Math.abs(r.y2 - r.y1),
           rotation: 0,
           color: ts.color, width: ts.width, fill_color: ts.fill_color || "",
+          layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
         };
         // Discrete object: select and return to select mode (same as arrow/ellipse).
         currentValue = { ...currentValue, annotations: [...(currentValue.annotations || []), ann], selected_ids: [ann.id] };
@@ -1905,6 +2071,7 @@ export default function AnnotateImageSimple(container, props) {
           w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1),
           rotation: 0,
           color: ts.color, width: ts.width, fill_color: ts.fill_color || "",
+          layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
         };
         // Discrete object: select and return to select mode (same as arrow/rect).
         currentValue = { ...currentValue, annotations: [...(currentValue.annotations || []), ann], selected_ids: [ann.id] };
@@ -1920,16 +2087,16 @@ export default function AnnotateImageSimple(container, props) {
         const x2 = Math.max(dragState.startCx, dragState.x2);
         const y2 = Math.max(dragState.startCy, dragState.y2);
         if (x2 - x1 > 5 || y2 - y1 > 5) {
-          const directHits = _effectiveAnnotations()
+          const directHits = _hittableAnnotations()
             .filter((a) => _annotationIntersectsRect(a, x1, y1, x2, y2))
             .map((a) => a.id);
           // Expand: if any member of a group is hit, include all members
-          const groupsHit = new Set(_effectiveAnnotations()
+          const groupsHit = new Set(_hittableAnnotations()
             .filter((a) => directHits.includes(a.id) && a.group_id)
             .map((a) => a.group_id));
           const inRect = [...new Set([
             ...directHits,
-            ..._effectiveAnnotations().filter((a) => groupsHit.has(a.group_id)).map((a) => a.id),
+            ..._hittableAnnotations().filter((a) => groupsHit.has(a.group_id)).map((a) => a.id),
           ])];
           const merged = dragState.additive
             ? [...new Set([...(currentValue.selected_ids || []), ...inRect])]
@@ -2078,6 +2245,26 @@ export default function AnnotateImageSimple(container, props) {
     if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
   }
 
+  // Sends the current state without touching _emitSeq (seq already claimed).
+  function _sendState() {
+    if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
+  }
+
+  // Debounced emit for rapid-fire paint strokes. Coalesces bursts into a single send
+  // 400ms after the last stroke, so drawing 50 strokes fires one round-trip instead of 50.
+  // _emitSeq is incremented EAGERLY (before the timer fires) so the stale-roundtrip guard
+  // in handleUpdate correctly blocks echoes of older emits during the debounce window —
+  // otherwise handleUpdate would accept them as "fresh" and overwrite the pending strokes.
+  let _emitTimer = null;
+  function _emitDebounced() {
+    _emitSeq++;
+    clearTimeout(_emitTimer);
+    _emitTimer = setTimeout(() => { _emitTimer = null; _sendState(); }, 400);
+  }
+  function _flushPendingEmit() {
+    if (_emitTimer !== null) { clearTimeout(_emitTimer); _emitTimer = null; _sendState(); }
+  }
+
   // Generates a collision-resistant unique id with a human-readable type prefix.
   function _uid(prefix) {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -2205,9 +2392,11 @@ export default function AnnotateImageSimple(container, props) {
 
   // Tears down all event listeners, observers, and DOM nodes. Called when the widget is unmounted.
   function cleanup() {
+    _flushPendingEmit();
     _closeModal();
     commitTextEdit();
     dismissLayerPopup?.();
+    dismissLayersPanel?.();
     _tooltip.cleanup();
     _cleanupHotkeys();
     resizeObserver.disconnect();
@@ -2252,6 +2441,21 @@ export default function AnnotateImageSimple(container, props) {
   });
   updateHud = _hudMod.update;
   dismissLayerPopup = _hudMod.dismissLayerPopup;
+
+  const _layersMod = createLayersPanel(layersBtn, layersLabelEl, layersIconWrap, {
+    addTooltip: _addTooltip,
+    uid: _uid,
+    getState: () => ({ activeTool, currentValue }),
+    setCurrentValue: (v) => { currentValue = v; },
+    applyAnnotationMap: _applyAnnotationMap,
+    effectiveAnnotations: _effectiveAnnotations,
+    renderLayerThumb,
+    emit: _emit,
+    renderCanvas,
+    rebuildSettings: () => rebuildSettings(),
+  });
+  updateLayersBtn = _layersMod.update;
+  dismissLayersPanel = _layersMod.dismiss;
 
   setTool(activeTool);
   applyCanvasScale();

@@ -13,6 +13,73 @@ export function expandGroupSelection(anns, hitId) {
   return anns.filter((a) => a.group_id === gid).map((a) => a.id);
 }
 
+// Pure function: returns a new annotation array with selIds repositioned per action,
+// scoped to the same layer. forward/backward skip over annotations in other layers;
+// front/back move to the extreme within the same layer's span in the array.
+// action: "front" | "back" | "forward" | "backward". Only affects local annotations.
+export function reorderAnnotations(anns, selIds, action) {
+  const selSet = new Set(selIds);
+  // Determine the layer of the selection (all selected items are expected to share one layer).
+  const selAnn = anns.find((a) => selSet.has(a.id));
+  const layerId = selAnn?.layer_id; // undefined = "no layer" treated as its own group
+
+  // Predicate: same layer as the selection.
+  const sameLayer = (a) => a.layer_id === layerId;
+
+  if (action === "front") {
+    // Move selected to end of their layer's span (highest z within the layer).
+    const nonSel = anns.filter((a) => !selSet.has(a.id));
+    const sel    = anns.filter((a) =>  selSet.has(a.id));
+    // Insert after the last same-layer non-selected item.
+    let insertAt = 0;
+    for (let i = 0; i < nonSel.length; i++) {
+      if (sameLayer(nonSel[i])) insertAt = i + 1;
+    }
+    return [...nonSel.slice(0, insertAt), ...sel, ...nonSel.slice(insertAt)];
+  }
+  if (action === "back") {
+    // Move selected to start of their layer's span (lowest z within the layer).
+    const nonSel = anns.filter((a) => !selSet.has(a.id));
+    const sel    = anns.filter((a) =>  selSet.has(a.id));
+    // Insert before the first same-layer non-selected item.
+    let insertAt = nonSel.length;
+    for (let i = 0; i < nonSel.length; i++) {
+      if (sameLayer(nonSel[i])) { insertAt = i; break; }
+    }
+    return [...nonSel.slice(0, insertAt), ...sel, ...nonSel.slice(insertAt)];
+  }
+  if (action === "forward") {
+    const result = [...anns];
+    const idxs = result.map((a, i) => (selSet.has(a.id) ? i : -1)).filter((i) => i >= 0);
+    if (!idxs.length) return anns;
+    const lastSel = Math.max(...idxs);
+    // Find next non-selected item in the SAME layer after lastSel.
+    let swapIdx = lastSel + 1;
+    while (swapIdx < result.length && (selSet.has(result[swapIdx].id) || !sameLayer(result[swapIdx]))) swapIdx++;
+    if (swapIdx < result.length) {
+      const [item] = result.splice(swapIdx, 1);
+      result.splice(Math.min(...idxs), 0, item);
+    }
+    return result;
+  }
+  if (action === "backward") {
+    const result = [...anns];
+    const idxs = result.map((a, i) => (selSet.has(a.id) ? i : -1)).filter((i) => i >= 0);
+    if (!idxs.length) return anns;
+    const firstSel = Math.min(...idxs);
+    // Find prev non-selected item in the SAME layer before firstSel.
+    let swapIdx = firstSel - 1;
+    while (swapIdx >= 0 && (selSet.has(result[swapIdx].id) || !sameLayer(result[swapIdx]))) swapIdx--;
+    if (swapIdx >= 0) {
+      const lastSel = Math.max(...idxs);
+      const [item] = result.splice(swapIdx, 1);
+      result.splice(lastSel, 0, item);
+    }
+    return result;
+  }
+  return anns;
+}
+
 export function createHud(el, {
   addTooltip,
   getState,           // () => { activeTool, currentValue }
@@ -197,7 +264,7 @@ export function createHud(el, {
     },
   ];
 
-  // ── layer order ───────────────────────────────────────────────────────────
+  // ── layer order popup (dismissed on rebuild) ──────────────────────────────
 
   // Removes the layer-order popup from the DOM (identified by its fixed id).
   function _dismissLayerPopup() {
@@ -205,47 +272,7 @@ export function createHud(el, {
     if (p) p.remove();
   }
 
-  // Pure function: returns a new annotation array with selIds repositioned per action.
-  // action: "front" | "back" | "forward" | "backward". Only affects local annotations.
-  function _reorderAnnotations(anns, selIds, action) {
-    const selSet = new Set(selIds);
-    if (action === "front") {
-      return [...anns.filter((a) => !selSet.has(a.id)), ...anns.filter((a) => selSet.has(a.id))];
-    }
-    if (action === "back") {
-      return [...anns.filter((a) => selSet.has(a.id)), ...anns.filter((a) => !selSet.has(a.id))];
-    }
-    if (action === "forward") {
-      const result = [...anns];
-      const idxs = result.map((a, i) => (selSet.has(a.id) ? i : -1)).filter((i) => i >= 0);
-      if (!idxs.length) return anns;
-      const lastSel = Math.max(...idxs);
-      let swapIdx = lastSel + 1;
-      while (swapIdx < result.length && selSet.has(result[swapIdx].id)) swapIdx++;
-      if (swapIdx < result.length) {
-        const [item] = result.splice(swapIdx, 1);
-        result.splice(Math.min(...idxs), 0, item);
-      }
-      return result;
-    }
-    if (action === "backward") {
-      const result = [...anns];
-      const idxs = result.map((a, i) => (selSet.has(a.id) ? i : -1)).filter((i) => i >= 0);
-      if (!idxs.length) return anns;
-      const firstSel = Math.min(...idxs);
-      let swapIdx = firstSel - 1;
-      while (swapIdx >= 0 && selSet.has(result[swapIdx].id)) swapIdx--;
-      if (swapIdx >= 0) {
-        const lastSel = Math.max(...idxs);
-        const [item] = result.splice(swapIdx, 1);
-        result.splice(lastSel, 0, item);
-      }
-      return result;
-    }
-    return anns;
-  }
-
-  // Creates a "layer order" button that opens a popup menu (Bring to Front / Forward / Backward / Back).
+  // Creates a "layer order" button — kept for potential future use but no longer added to the HUD.
   function _buildLayerOrderButton(selIds, container, btnClass = "ais-hud-btn") {
     const btn = document.createElement("button");
     btn.className = btnClass;
@@ -292,7 +319,7 @@ export function createHud(el, {
         item.addEventListener("pointerdown",  (ev) => {
           ev.stopPropagation();
           const { currentValue } = getState();
-          const newAnns = _reorderAnnotations(currentValue.annotations || [], selIds, action);
+          const newAnns = reorderAnnotations(currentValue.annotations || [], selIds, action);
           setCurrentValue({ ...currentValue, annotations: newAnns });
           emit(); rebuildSettings(true); renderCanvas();
         });
@@ -353,10 +380,6 @@ export function createHud(el, {
       if (_canGroup())   _hudBtn({ label: "Group",   icon: _groupIcon,   trigger: _executeGroup });
       if (_canUngroup()) _hudBtn({ label: "Ungroup", icon: _ungroupIcon, trigger: _executeUngroup });
       if (_canGroup() || _canUngroup()) _hudSep();
-
-      // Layer order
-      _buildLayerOrderButton(selIds, el, "ais-hud-btn");
-      _hudSep();
 
       // Delete selected
       _hudBtn(ACTION_DESCS.find((d) => d.id === "deleteSelected"), "danger");

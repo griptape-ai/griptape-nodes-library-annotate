@@ -18,9 +18,10 @@ One Python node (`AnnotateImage`) backed by one JS widget (`AnnotateImage.js`). 
 - `griptape_nodes_library_annotate/widgets/AnnotateImage/_drawing.js` — canvas draw functions for all annotation types
 - `griptape_nodes_library_annotate/widgets/AnnotateImage/_geometry.js` — bounding box, transform, and OBB helpers
 - `griptape_nodes_library_annotate/widgets/AnnotateImage/_hotkeys.js` — all document-level keyboard listeners
-- `griptape_nodes_library_annotate/widgets/AnnotateImage/_icons.js` — SVG icon registry
+- `griptape_nodes_library_annotate/widgets/AnnotateImage/_icons.js` — SVG icon registry (see **annotate-image-icons** skill for the full list)
 - `griptape_nodes_library_annotate/widgets/AnnotateImage/_styles.js` — all constants (colors, sizes, opacities, dash patterns)
 - `griptape_nodes_library_annotate/widgets/AnnotateImage/_tooltip.js` — tooltip factory
+- `griptape_nodes_library_annotate/widgets/AnnotateImage/_layers.js` — layers panel and operations (see **annotate-image-layers** skill)
 
 ---
 
@@ -44,18 +45,27 @@ The widget lives on `output_annotation_data` via `Widget(name="AnnotateImage", l
 
 ```json
 {
-  "image_url": "http://...",        // browser-accessible URL for the canvas background
-  "raw_url": "/path/to/file.png",   // filesystem path used by Python for compositing
+  "image_url": "http://...",
+  "raw_url": "/path/to/file.png",
   "canvas_width": 1920,
   "canvas_height": 1080,
   "active_tool": "select",
-  "tool_settings": { ... },         // per-tool defaults (see below)
-  "annotations": [ ... ],           // locally created annotations
-  "imported_annotations": [ ... ],  // annotations received from upstream node
-  "overrides": { "id": { ... } },   // per-id field overrides for imported annotations
-  "selected_ids": ["id1", "id2"]
+  "tool_settings": { ... },
+  "annotations": [ ... ],
+  "imported_annotations": [ ... ],
+  "overrides": { "id": { ... } },
+  "selected_ids": ["id1", "id2"],
+
+  "layers": [ { "id": "layer-abc123", "name": "Layer 1", "visible": true, "locked": false } ],
+  "active_layer_id": "layer-abc123",
+  "layer_stack": ["layer-abc123", ...],
+  "imported_layers": [ { "id": "...", "name": "...", "visible": true } ],
+  "imported_layer_overrides": { "layer-id": { "visible": false, "locked": true } },
+  "isolated_layer_id": null
 }
 ```
+
+See the **annotate-image-layers** skill for full documentation of the layer fields.
 
 ### Tool Settings
 
@@ -73,27 +83,27 @@ The widget lives on `output_annotation_data` via `Widget(name="AnnotateImage", l
 
 ### Annotation Types
 
-All annotations share `id` (unique string) and `type`. Additional fields per type:
+All annotations share `id` (unique string), `type`, and `layer_id` (which layer this belongs to; absent = default/first layer).
 
 **paint**
 ```json
 {
-  "id": "paint-1", "type": "paint",
+  "id": "paint-1", "type": "paint", "layer_id": "layer-abc123",
   "strokes": [
     { "color": "#ff0000", "size": 8, "points": [[x, y, size], ...] }
   ],
-  "x": 0, "y": 0,            // translation offset
-  "scaleX": 1, "scaleY": 1, // scale applied from transform handles
-  "rotation": 0,             // radians
-  "cx": null, "cy": null,    // natural center (computed from strokes if null)
-  "sizeScale": 1.0           // brush size scale from transform
+  "x": 0, "y": 0,
+  "scaleX": 1, "scaleY": 1,
+  "rotation": 0,
+  "cx": null, "cy": null,
+  "sizeScale": 1.0
 }
 ```
 
 **text**
 ```json
 {
-  "id": "text-1", "type": "text",
+  "id": "text-1", "type": "text", "layer_id": "layer-abc123",
   "text": "Shot Description",
   "x": 10, "y": 10,
   "rotation": 0,
@@ -107,9 +117,9 @@ All annotations share `id` (unique string) and `type`. Additional fields per typ
 **arrow**
 ```json
 {
-  "id": "arrow-1", "type": "arrow",
+  "id": "arrow-1", "type": "arrow", "layer_id": "layer-abc123",
   "x1": 100, "y1": 100, "x2": 400, "y2": 300,
-  "cp1x": null, "cp1y": null,   // bezier control points (null = auto)
+  "cp1x": null, "cp1y": null,
   "cp2x": null, "cp2y": null,
   "color": "#ff0000",
   "width": 8,
@@ -124,9 +134,9 @@ All annotations share `id` (unique string) and `type`. Additional fields per typ
 **rect**
 ```json
 {
-  "id": "rect-1", "type": "rect",
-  "x": 200, "y": 150,   // center point
-  "w": 300, "h": 200,   // total width/height
+  "id": "rect-1", "type": "rect", "layer_id": "layer-abc123",
+  "x": 200, "y": 150,
+  "w": 300, "h": 200,
   "rotation": 0,
   "color": "#ff0000",
   "width": 8,
@@ -137,8 +147,8 @@ All annotations share `id` (unique string) and `type`. Additional fields per typ
 **ellipse**
 ```json
 {
-  "id": "ellipse-1", "type": "ellipse",
-  "x": 200, "y": 150,   // center point
+  "id": "ellipse-1", "type": "ellipse", "layer_id": "layer-abc123",
+  "x": 200, "y": 150,
   "w": 300, "h": 200,
   "rotation": 0,
   "color": "#ff0000",
@@ -155,7 +165,9 @@ When an upstream `output_annotation_data` is wired into `input_annotation_data`,
 
 **Effective annotation list** (used for rendering, hit testing, export):
 ```
-imported_annotations (with overrides applied, deleted ones skipped) + annotations
+imported_annotations (overrides applied, deleted ones skipped, hidden-layer ones filtered)
++ local annotations
+sorted by layer_stack order
 ```
 
 **Override rules:**
@@ -170,6 +182,41 @@ Selection chrome: local annotations use blue (`SEL_COLOR`), imported annotations
 
 ---
 
+## JS/Python Parity — Critical Rule
+
+> **IMPORTANT:** Any change to how an annotation type is drawn in `_drawing.js` **must** be mirrored in the corresponding `_draw_<type>()` method in `annotate_image.py`, and vice versa. The JS widget is the live preview; Python is the final render — they must produce identical output.
+
+This parity applies to:
+- Geometry formulas and math (taper, arrowhead size, transform order)
+- New annotation fields
+- Layer filtering logic (`_effectiveAnnotations` / `_effective_annotations`)
+- Visibility filtering (hidden layers, isolated layer, imported layer overrides)
+- Opacity / alpha compositing
+
+### Opacity (Alpha Compositing) — Critical Pitfall
+
+`ImageDraw` in Pillow sets pixels directly and **does not composite**. Drawing a semi-transparent annotation directly to `overlay` makes it fully opaque. The correct pattern for every annotation type except text:
+
+```python
+ann_temp = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+ann_draw = ImageDraw.Draw(ann_temp)
+# ... draw onto ann_draw ...
+overlay.alpha_composite(ann_temp)
+```
+
+Text handles its own temp/composite internally (required for rotation). **Never** draw other annotation types directly to `overlay` via `ImageDraw.Draw(overlay)`.
+
+`_parse_color()` must preserve the alpha from `parse_color_to_rgba`:
+
+```python
+r, g, b, a = parse_color_to_rgba(color_str)
+return (r, g, b, int(a * opacity))
+```
+
+Do **not** discard `a` with `_` or hardcode `255`.
+
+---
+
 ## JS Widget Architecture
 
 ### Entry Point (`AnnotateImage.js`)
@@ -178,37 +225,43 @@ Selection chrome: local annotations use blue (`SEL_COLOR`), imported annotations
 - Returns `{ cleanup, update: handleUpdate }` — framework calls `update` on value changes
 - Owns all top-level state: `currentValue`, `activeTool`, `toolSettings`, view transform (`viewScale`, `panX`, `panY`)
 - Wires all modules together via dependency injection (closures)
+- Calls `ensureLayers(currentValue)` at init to guarantee a valid layer exists
 
 ### Module Responsibilities
 
 | File | Owns |
 |---|---|
-| `_toolbar.js` | Sidebar tool buttons + header bar layout (3 regions). Exports `createToolbar()` |
-| `_settings.js` | Content of the `settingsArea` (left header region). Populates based on active tool + selection |
-| `_object_actions.js` | Content of `objectActionsEl` (right header region). Group/ungroup, layer order, delete, reset overrides |
-| `_drawing.js` | All canvas draw calls for committed annotations. Factory bound to live state |
-| `_geometry.js` | OBB helpers, bounding boxes, bezier control point defaults, paint transform math |
-| `_hotkeys.js` | All `document`-level keyboard listeners (tool shortcuts, delete, undo, etc.) |
-| `_styles.js` | All constants. Import from here; never hardcode colors or sizes elsewhere |
+| `_toolbar.js` | Sidebar tool buttons + header bar layout (3 regions). Exports `createToolbar()`. Includes the layers status pill (icon + label + chevron) in the header. |
+| `_settings.js` | Content of the `settingsArea` (left header region). Populates based on active tool + selection. Includes object ordering popup (Bring to Front / Back). |
+| `_object_actions.js` | Content of `objectActionsEl` (right header region). Group/ungroup, delete, reset overrides. `reorderAnnotations` is layer-aware (skips annotations on other layers). |
+| `_drawing.js` | All canvas draw calls for committed annotations. Factory bound to live state. |
+| `_geometry.js` | OBB helpers, bounding boxes, bezier control point defaults, paint transform math. |
+| `_hotkeys.js` | All `document`-level keyboard listeners (tool shortcuts, delete, undo, etc.). |
+| `_styles.js` | All constants. Import from here; never hardcode colors or sizes elsewhere. |
 | `_tooltip.js` | `createTooltip()` → `addTooltip(el, text)` |
-| `_icons.js` | `mkIcon(id, size?)` → SVG element |
+| `_icons.js` | `mkIcon(id, size?)` → SVG element. See **annotate-image-icons** skill for the full registry. |
+| `_layers.js` | Layers panel UI + all layer operations. See **annotate-image-layers** skill. |
 
 ### Header Bar Layout
 
 ```
 headerBar (flex row)
-├── settingsArea   (flex:1, left) — tool/annotation settings
-├── objectActionsEl (flex-shrink:0, right of settings) — object actions, display:none when empty
+├── settingsArea    (flex:1, left) — tool/annotation settings
+├── objectActionsEl (flex-shrink:0, hidden when empty) — object actions
+├── [divider]
+├── layersBtn       (status pill: icon + active layer name + chevron) — opens layers panel
 └── viewControls   (flex-shrink:0, far right) — fit-to-canvas [F] + expand modal
 ```
 
 ### `createToolbar()` Return Value
 
 ```js
-{ sidebar, headerBar, settingsArea, objectActionsEl, toolBtns,
-  setActiveTool(id),        // updates button active state
-  setResetViewEnabled(bool), // dims/enables the fit-to-canvas button
-  updateExpandIcon(isExpanded) // swaps expand ↔ contract icon
+{ sidebar, headerBar, settingsArea, objectActionsEl,
+  layersBtn, layersLabelEl, layersIconWrap,
+  toolBtns,
+  setActiveTool(id),
+  setResetViewEnabled(bool),
+  updateExpandIcon(isExpanded)
 }
 ```
 
@@ -239,7 +292,38 @@ Draw functions mirror the JS render exactly:
 
 Color parsing via `griptape_nodes_library_annotate.utils.color_utils.parse_color_to_rgba`.
 
-> **IMPORTANT — JS/Python parity rule:** Any change to how an annotation type is drawn in `_drawing.js` **must** be mirrored in the corresponding `_draw_<type>()` method in `annotate_image.py`, and vice versa. The JS widget is the live preview; Python is the final render — they must produce identical output. This includes geometry formulas, new annotation fields, and math fixes (e.g. taper, arrowhead size).
+### `_effective_annotations(annotation_data)` — Python
+
+The Python counterpart to JS `_effectiveAnnotations()`. In order:
+1. Merge `imported_annotations` with `overrides` (skip deleted), apply `imported_layer_overrides` (filter hidden)
+2. Append local `annotations`
+3. Filter out annotations on hidden local layers
+4. Sort by `layer_stack` (or fallback `[imported ids] + [local ids]`)
+5. Filter to `isolated_layer_id` if set
+
+---
+
+## Known Issues / Gotchas
+
+### Engine Serialization Bug
+
+`ParameterDict` + `Widget` + `LifecycleStage.BETA` in the same node manifest causes a save/reload failure after Griptape Nodes engine commit `1ba3709d`. The repr `stage=<LifecycleStage.BETA: 'BETA'>` is emitted as invalid Python syntax in saved workflows.
+
+**Workaround:** `AnnotateImage` has `"declarations": []` in `griptape-nodes-library.json` (BETA removed). Do not add BETA back to this node until the engine bug is fixed.
+
+### E741 Lint — Ambiguous Variable Name
+
+Python lints `l` as an ambiguous variable name (E741). All list comprehensions in `annotate_image.py` must use `layer` (or any non-`l` name) as the loop variable:
+
+```python
+# WRONG — fails CI (ruff check)
+hidden_ids = {l["id"] for l in layers if not l.get("visible", True)}
+
+# CORRECT
+hidden_ids = {layer["id"] for layer in layers if not layer.get("visible", True)}
+```
+
+CI runs `ruff check` — this will fail the PR if you use `l` as a loop variable.
 
 ---
 
@@ -252,6 +336,8 @@ Color parsing via `griptape_nodes_library_annotate.utils.color_utils.parse_color
 5. Add in-progress preview in `_doRender()`
 6. Add render call in `drawAnnotation()`
 7. Add tool entry to `DRAW_TOOLS` in `_toolbar.js`
-8. Add icon path to `_icons.js`
+8. Add icon to `_icons.js` — see **annotate-image-icons** skill; ask the user for the SVG if needed
 9. Add tool settings to `_settings.js` and defaults to `_styles.js`
 10. Add Python draw method `_draw_<type>()` in `annotate_image.py` and call it in `process()`
+11. Stamp `layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id` on the new annotation object (same as all existing types)
+12. Use `ann_temp` + `overlay.alpha_composite(ann_temp)` in `process()` — **not** `ImageDraw.Draw(overlay)` directly
