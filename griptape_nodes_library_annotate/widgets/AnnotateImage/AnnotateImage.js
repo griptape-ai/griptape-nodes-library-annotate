@@ -274,9 +274,16 @@ export default function AnnotateImageSimple(container, props) {
     return { ...ann, x: (ann.x ?? 0) * cw / 100, y: (ann.y ?? 0) * ch / 100 };
   }
 
+  // Thumbnail cache — invalidated by renderCanvas() whenever annotations change.
+  // Prevents re-drawing all layer annotations on every panel re-render (e.g. toggling
+  // visibility or lock triggers _renderPanel() but annotations haven't changed).
+  const _thumbCache = new Map();
+
   // Renders a layer's annotations into a small canvas element for use as a thumbnail.
   // Returns an HTMLCanvasElement (2× resolution for crisp display at CSS 38×28).
   function renderLayerThumb(layerId) {
+    if (_thumbCache.has(layerId)) return _thumbCache.get(layerId);
+
     const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
     const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
     const TW = 76, TH = 56; // 2× the 38×28 CSS size
@@ -320,6 +327,7 @@ export default function AnnotateImageSimple(container, props) {
     }
 
     offCtx.restore();
+    _thumbCache.set(layerId, offCanvas);
     return offCanvas;
   }
 
@@ -600,6 +608,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // Schedules a canvas redraw via RAF. Increments renderGen so any in-flight render is cancelled.
   function renderCanvas() {
+    _thumbCache.clear();
     const gen = ++renderGen;
     requestAnimationFrame(() => { if (gen === renderGen) _doRender(gen); });
   }

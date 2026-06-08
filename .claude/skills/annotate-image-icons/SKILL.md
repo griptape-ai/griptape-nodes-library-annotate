@@ -63,7 +63,11 @@ Returns an `<svg>` element with `display:block; flex-shrink:0; pointer-events:no
 | `align-start-horizontal` | Anchor top |
 | `align-center-horizontal` | Anchor middle-vertical |
 | `align-end-horizontal` | Anchor bottom |
-| `list-chevrons-up-down` | Object ordering (Bring to Front / Back) in settings |
+| `list-chevrons-up-down` | Object ordering button in settings area |
+| `order-front`    | Bring to Front menu item |
+| `order-forward`  | Bring Forward menu item |
+| `order-backward` | Send Backward menu item |
+| `order-back`     | Send to Back menu item |
 | `layers` | Layers panel button in header bar |
 | `plus` | Create new layer |
 | `square-arrow-right-enter` | Move selection to layer |
