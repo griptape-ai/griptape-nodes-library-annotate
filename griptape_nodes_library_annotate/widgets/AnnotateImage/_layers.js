@@ -95,7 +95,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
   // ── data helpers ───────────────────────────────────────────────────────────
 
   function _cv()      { return getState().currentValue; }
-  function _layers()  { const cv = _cv(); return cv.layers?.length ? cv.layers : [{ id: "layer-default", name: "Layer 1", visible: true }]; }
+  function _layers()  { return ensureLayers(_cv()).layers; }
   function _activeId() {
     const cv = _cv();
     const aid = cv.active_layer_id;
