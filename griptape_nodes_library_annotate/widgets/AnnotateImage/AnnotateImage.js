@@ -274,9 +274,16 @@ export default function AnnotateImageSimple(container, props) {
     return { ...ann, x: (ann.x ?? 0) * cw / 100, y: (ann.y ?? 0) * ch / 100 };
   }
 
+  // Thumbnail cache — invalidated by renderCanvas() whenever annotations change.
+  // Prevents re-drawing all layer annotations on every panel re-render (e.g. toggling
+  // visibility or lock triggers _renderPanel() but annotations haven't changed).
+  const _thumbCache = new Map();
+
   // Renders a layer's annotations into a small canvas element for use as a thumbnail.
   // Returns an HTMLCanvasElement (2× resolution for crisp display at CSS 38×28).
   function renderLayerThumb(layerId) {
+    if (_thumbCache.has(layerId)) return _thumbCache.get(layerId);
+
     const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
     const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
     const TW = 76, TH = 56; // 2× the 38×28 CSS size
@@ -320,6 +327,7 @@ export default function AnnotateImageSimple(container, props) {
     }
 
     offCtx.restore();
+    _thumbCache.set(layerId, offCanvas);
     return offCanvas;
   }
 
@@ -600,6 +608,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // Schedules a canvas redraw via RAF. Increments renderGen so any in-flight render is cancelled.
   function renderCanvas() {
+    _thumbCache.clear();
     const gen = ++renderGen;
     requestAnimationFrame(() => { if (gen === renderGen) _doRender(gen); });
   }
@@ -1994,7 +2003,7 @@ export default function AnnotateImageSimple(container, props) {
         annotations: [...(currentValue.annotations || []), paintAnn],
         selected_ids: [],
       };
-      _emit();
+      _emitDebounced();
       rebuildSettings();
       canvas.focus({ preventScroll: true });
       renderCanvas();
@@ -2236,6 +2245,26 @@ export default function AnnotateImageSimple(container, props) {
     if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
   }
 
+  // Sends the current state without touching _emitSeq (seq already claimed).
+  function _sendState() {
+    if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
+  }
+
+  // Debounced emit for rapid-fire paint strokes. Coalesces bursts into a single send
+  // 400ms after the last stroke, so drawing 50 strokes fires one round-trip instead of 50.
+  // _emitSeq is incremented EAGERLY (before the timer fires) so the stale-roundtrip guard
+  // in handleUpdate correctly blocks echoes of older emits during the debounce window —
+  // otherwise handleUpdate would accept them as "fresh" and overwrite the pending strokes.
+  let _emitTimer = null;
+  function _emitDebounced() {
+    _emitSeq++;
+    clearTimeout(_emitTimer);
+    _emitTimer = setTimeout(() => { _emitTimer = null; _sendState(); }, 400);
+  }
+  function _flushPendingEmit() {
+    if (_emitTimer !== null) { clearTimeout(_emitTimer); _emitTimer = null; _sendState(); }
+  }
+
   // Generates a collision-resistant unique id with a human-readable type prefix.
   function _uid(prefix) {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -2363,6 +2392,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // Tears down all event listeners, observers, and DOM nodes. Called when the widget is unmounted.
   function cleanup() {
+    _flushPendingEmit();
     _closeModal();
     commitTextEdit();
     dismissLayerPopup?.();

@@ -95,7 +95,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
   // ── data helpers ───────────────────────────────────────────────────────────
 
   function _cv()      { return getState().currentValue; }
-  function _layers()  { const cv = _cv(); return cv.layers?.length ? cv.layers : [{ id: "layer-default", name: "Layer 1", visible: true }]; }
+  function _layers()  { return ensureLayers(_cv()).layers; }
   function _activeId() {
     const cv = _cv();
     const aid = cv.active_layer_id;
@@ -245,6 +245,106 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
     if (panel) _renderPanel();
   }
 
+  // ── drag handle ────────────────────────────────────────────────────────────
+  // Shared by local and imported rows. accentColor is SEL_COLOR_RGB or IMP_COLOR_RGB.
+
+  function _buildDragHandle(layer, row, list, accentColor) {
+    const drag = document.createElement("div");
+    drag.style.cssText =
+      "flex-shrink:0;width:18px;height:24px;cursor:grab;display:flex;align-items:center;justify-content:center;" +
+      "opacity:0.25;margin-left:6px;touch-action:none;";
+    const dgSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    dgSvg.setAttribute("width", "10"); dgSvg.setAttribute("height", "14"); dgSvg.setAttribute("viewBox", "0 0 10 14");
+    dgSvg.setAttribute("fill", "currentColor"); dgSvg.style.cssText = "display:block;pointer-events:none;";
+    dgSvg.innerHTML =
+      `<circle cx="3" cy="2.5" r="1.2"/><circle cx="7" cy="2.5" r="1.2"/>` +
+      `<circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/>` +
+      `<circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/>`;
+    drag.appendChild(dgSvg);
+
+    const dropLine = document.createElement("div");
+    dropLine.style.cssText =
+      `height:2px;background:rgba(${accentColor},1);margin:0 4px;border-radius:1px;pointer-events:none;flex-shrink:0;`;
+
+    drag.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation(); e.preventDefault();
+      drag.setPointerCapture(e.pointerId);
+      drag.style.cursor = "grabbing";
+      row.style.opacity = "0.35";
+
+      const ghost = document.createElement("div");
+      ghost.style.cssText = [
+        "position:fixed", "pointer-events:none", "z-index:99999",
+        "display:flex", "align-items:center", "gap:8px",
+        "padding:5px 12px 5px 8px",
+        "background:var(--popover,#1e1e1e)",
+        `border:1px solid rgba(${accentColor},0.5)`,
+        "border-radius:8px",
+        "box-shadow:0 8px 28px rgba(0,0,0,0.55)",
+        "opacity:0.92",
+        "font-family:sans-serif", "font-size:12px", "font-weight:600",
+        "color:var(--foreground)", "white-space:nowrap",
+        "transition:none",
+      ].join(";");
+
+      const ghostThumb = renderLayerThumb(layer.id);
+      ghostThumb.style.cssText =
+        "flex-shrink:0;width:38px;height:28px;border-radius:3px;" +
+        `border:1px solid rgba(${accentColor},0.3);display:block;`;
+      ghost.appendChild(ghostThumb);
+      const ghostName = document.createElement("span");
+      ghostName.textContent = layer.name;
+      ghost.appendChild(ghostName);
+      document.body.appendChild(ghost);
+
+      const _placeGhost = (ev) => {
+        ghost.style.left = `${ev.clientX + 14}px`;
+        ghost.style.top  = `${ev.clientY - ghost.offsetHeight / 2}px`;
+      };
+      _placeGhost(e);
+
+      let dropVisualIdx = null;
+
+      const onMove = (ev) => {
+        _placeGhost(ev);
+        const otherRows = [...list.querySelectorAll("[data-stack-id]")]
+          .filter((r) => r.dataset.stackId !== layer.id);
+        dropLine.remove();
+        dropVisualIdx = otherRows.length;
+        for (let i = 0; i < otherRows.length; i++) {
+          const rect = otherRows[i].getBoundingClientRect();
+          if (ev.clientY < rect.top + rect.height / 2) {
+            dropVisualIdx = i;
+            list.insertBefore(dropLine, otherRows[i]);
+            break;
+          }
+        }
+        if (!dropLine.parentElement) list.appendChild(dropLine);
+      };
+
+      const onUp = () => {
+        drag.style.cursor = "grab";
+        row.style.opacity = "";
+        dropLine.remove();
+        ghost.remove();
+        drag.removeEventListener("pointermove", onMove);
+        drag.removeEventListener("pointerup", onUp);
+        drag.removeEventListener("pointercancel", onUp);
+        if (dropVisualIdx !== null) {
+          const m = getEffectiveLayerStack(_cv()).length - 1;
+          moveStackLayerToIndex(layer.id, Math.max(0, Math.min(m, m - dropVisualIdx)));
+        }
+      };
+
+      drag.addEventListener("pointermove", onMove);
+      drag.addEventListener("pointerup", onUp);
+      drag.addEventListener("pointercancel", onUp);
+    });
+
+    return drag;
+  }
+
   // ── panel render ───────────────────────────────────────────────────────────
 
   function _renderPanel() {
@@ -372,107 +472,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
       setActive(layer.id);
     });
 
-    // ── drag handle ───────────────────────────────────────────────────────────
-    const drag = document.createElement("div");
-    drag.style.cssText =
-      "flex-shrink:0;width:18px;height:24px;cursor:grab;display:flex;align-items:center;justify-content:center;" +
-      "opacity:0.25;margin-left:6px;touch-action:none;";
-    const dgSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    dgSvg.setAttribute("width", "10"); dgSvg.setAttribute("height", "14"); dgSvg.setAttribute("viewBox", "0 0 10 14");
-    dgSvg.setAttribute("fill", "currentColor"); dgSvg.style.cssText = "display:block;pointer-events:none;";
-    dgSvg.innerHTML =
-      `<circle cx="3" cy="2.5" r="1.2"/><circle cx="7" cy="2.5" r="1.2"/>` +
-      `<circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/>` +
-      `<circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/>`;
-    drag.appendChild(dgSvg);
-
-    // Drop indicator line (shared reference, inserted/removed during drag)
-    const dropLine = document.createElement("div");
-    dropLine.style.cssText =
-      `height:2px;background:rgba(${SEL_COLOR_RGB},1);margin:0 4px;border-radius:1px;pointer-events:none;flex-shrink:0;`;
-
-    drag.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.stopPropagation(); e.preventDefault();
-      drag.setPointerCapture(e.pointerId);
-      drag.style.cursor = "grabbing";
-      row.style.opacity = "0.35";
-
-      // ── ghost ────────────────────────────────────────────────────────────────
-      const ghost = document.createElement("div");
-      ghost.style.cssText = [
-        "position:fixed", "pointer-events:none", "z-index:99999",
-        "display:flex", "align-items:center", "gap:8px",
-        "padding:5px 12px 5px 8px",
-        "background:var(--popover,#1e1e1e)",
-        "border:1px solid var(--border,#555)",
-        "border-radius:8px",
-        "box-shadow:0 8px 28px rgba(0,0,0,0.55)",
-        "opacity:0.92",
-        "font-family:sans-serif", "font-size:12px", "font-weight:600",
-        "color:var(--foreground)", "white-space:nowrap",
-        "transition:none",
-      ].join(";");
-
-      const ghostThumb = renderLayerThumb(layer.id);
-      ghostThumb.style.cssText =
-        "flex-shrink:0;width:38px;height:28px;border-radius:3px;" +
-        "border:1px solid var(--border);display:block;";
-      ghost.appendChild(ghostThumb);
-
-      const ghostName = document.createElement("span");
-      ghostName.textContent = layer.name;
-      ghost.appendChild(ghostName);
-
-      document.body.appendChild(ghost);
-
-      const _placeGhost = (ev) => {
-        ghost.style.left = `${ev.clientX + 14}px`;
-        ghost.style.top  = `${ev.clientY - ghost.offsetHeight / 2}px`;
-      };
-      _placeGhost(e);
-
-      // ── drop indicator + position tracking ───────────────────────────────────
-      let dropVisualIdx = null;
-
-      const onMove = (ev) => {
-        _placeGhost(ev);
-        const otherRows = [...list.querySelectorAll("[data-stack-id]")]
-          .filter((r) => r.dataset.stackId !== layer.id);
-        dropLine.remove();
-        dropVisualIdx = otherRows.length;
-        for (let i = 0; i < otherRows.length; i++) {
-          const rect = otherRows[i].getBoundingClientRect();
-          if (ev.clientY < rect.top + rect.height / 2) {
-            dropVisualIdx = i;
-            list.insertBefore(dropLine, otherRows[i]);
-            break;
-          }
-        }
-        if (!dropLine.parentElement) list.appendChild(dropLine);
-      };
-
-      const onUp = () => {
-        drag.style.cursor = "grab";
-        row.style.opacity = "";
-        dropLine.remove();
-        ghost.remove();
-        drag.removeEventListener("pointermove", onMove);
-        drag.removeEventListener("pointerup", onUp);
-        drag.removeEventListener("pointercancel", onUp);
-
-        if (dropVisualIdx !== null) {
-          const m = getEffectiveLayerStack(_cv()).length - 1;
-          moveStackLayerToIndex(layer.id, Math.max(0, Math.min(m, m - dropVisualIdx)));
-        }
-      };
-
-      drag.addEventListener("pointermove", onMove);
-      drag.addEventListener("pointerup", onUp);
-      drag.addEventListener("pointercancel", onUp);
-    });
-
-    row.appendChild(drag);
+    row.appendChild(_buildDragHandle(layer, row, list, SEL_COLOR_RGB));
 
     // ── thumbnail ──────────────────────────────────────────────────────────────
     const thumb = renderLayerThumb(layer.id);
@@ -567,99 +567,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
       setActive(layer.id);
     });
 
-    // ── drag handle ───────────────────────────────────────────────────────────
-    const drag = document.createElement("div");
-    drag.style.cssText =
-      "flex-shrink:0;width:18px;height:24px;cursor:grab;display:flex;align-items:center;" +
-      "justify-content:center;opacity:0.25;margin-left:6px;touch-action:none;";
-    const dgSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    dgSvg.setAttribute("width", "10"); dgSvg.setAttribute("height", "14");
-    dgSvg.setAttribute("viewBox", "0 0 10 14"); dgSvg.setAttribute("fill", "currentColor");
-    dgSvg.style.cssText = "display:block;pointer-events:none;";
-    dgSvg.innerHTML =
-      `<circle cx="3" cy="2.5" r="1.2"/><circle cx="7" cy="2.5" r="1.2"/>` +
-      `<circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/>` +
-      `<circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/>`;
-    drag.appendChild(dgSvg);
-
-    const dropLine = document.createElement("div");
-    dropLine.style.cssText =
-      `height:2px;background:rgba(${IMP_COLOR_RGB},1);margin:0 4px;border-radius:1px;pointer-events:none;flex-shrink:0;`;
-
-    drag.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.stopPropagation(); e.preventDefault();
-      drag.setPointerCapture(e.pointerId);
-      drag.style.cursor = "grabbing";
-      row.style.opacity = "0.35";
-
-      // Ghost
-      const ghost = document.createElement("div");
-      ghost.style.cssText = [
-        "position:fixed", "pointer-events:none", "z-index:99999",
-        "display:flex", "align-items:center", "gap:8px",
-        "padding:5px 12px 5px 8px",
-        "background:var(--popover,#1e1e1e)",
-        `border:1px solid rgba(${IMP_COLOR_RGB},0.5)`,
-        "border-radius:8px",
-        "box-shadow:0 8px 28px rgba(0,0,0,0.55)",
-        "opacity:0.92", "font-family:sans-serif", "font-size:12px",
-        "font-weight:600", "color:var(--foreground)", "white-space:nowrap",
-      ].join(";");
-      const ghostThumb = renderLayerThumb(layer.id);
-      ghostThumb.style.cssText = "flex-shrink:0;width:38px;height:28px;border-radius:3px;" +
-        `border:1px solid rgba(${IMP_COLOR_RGB},0.3);display:block;`;
-      ghost.appendChild(ghostThumb);
-      const ghostName = document.createElement("span");
-      ghostName.textContent = layer.name;
-      ghost.appendChild(ghostName);
-      document.body.appendChild(ghost);
-
-      const _placeGhost = (ev) => {
-        ghost.style.left = `${ev.clientX + 14}px`;
-        ghost.style.top  = `${ev.clientY - ghost.offsetHeight / 2}px`;
-      };
-      _placeGhost(e);
-
-      let dropVisualIdx = null;
-
-      const onMove = (ev) => {
-        _placeGhost(ev);
-        const otherRows = [...list.querySelectorAll("[data-stack-id]")]
-          .filter((r) => r.dataset.stackId !== layer.id);
-        dropLine.remove();
-        dropVisualIdx = otherRows.length;
-        for (let i = 0; i < otherRows.length; i++) {
-          const rect = otherRows[i].getBoundingClientRect();
-          if (ev.clientY < rect.top + rect.height / 2) {
-            dropVisualIdx = i;
-            list.insertBefore(dropLine, otherRows[i]);
-            break;
-          }
-        }
-        if (!dropLine.parentElement) list.appendChild(dropLine);
-      };
-
-      const onUp = () => {
-        drag.style.cursor = "grab";
-        row.style.opacity = "";
-        dropLine.remove();
-        ghost.remove();
-        drag.removeEventListener("pointermove", onMove);
-        drag.removeEventListener("pointerup", onUp);
-        drag.removeEventListener("pointercancel", onUp);
-        if (dropVisualIdx !== null) {
-          const m = getEffectiveLayerStack(_cv()).length - 1;
-          moveStackLayerToIndex(layer.id, Math.max(0, Math.min(m, m - dropVisualIdx)));
-        }
-      };
-
-      drag.addEventListener("pointermove", onMove);
-      drag.addEventListener("pointerup", onUp);
-      drag.addEventListener("pointercancel", onUp);
-    });
-
-    row.appendChild(drag);
+    row.appendChild(_buildDragHandle(layer, row, list, IMP_COLOR_RGB));
 
     // Thumbnail
     const thumb = renderLayerThumb(layer.id);
