@@ -123,5 +123,7 @@ export function injectStyles() {
     .ais-hud-btn.imp:hover { background:rgba(201,131,10,0.18); color:#f0b050; }
     .ais-hud-btn.danger:hover { background:rgba(220,60,60,0.22); color:#ff7070; }
     .ais-hud-sep { width:1px; height:18px; background:var(--border); margin:0 2px; flex-shrink:0; }
+    .ais-cp-swatch { width:22px; height:22px; border-radius:50%; border:2px solid var(--border,#555); cursor:pointer; flex-shrink:0; padding:0; box-sizing:border-box; background-color:transparent; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+    .ais-cp-swatch:hover { border-color:var(--foreground,#aaa); }
   `;
 }

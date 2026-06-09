@@ -384,7 +384,10 @@ class AnnotateImage(DataNode):
         cp1y = float(ann.get("cp1y", y1 + (y2 - y1) / 3))
         cp2x = float(ann.get("cp2x", x1 + (x2 - x1) * 2 / 3))
         cp2y = float(ann.get("cp2y", y1 + (y2 - y1) * 2 / 3))
-        color = self._parse_color(ann.get("color", "#ff0000"))
+        color_str = ann.get("color", "") or ""
+        if not color_str:
+            return
+        color = self._parse_color(color_str)
         w = max(1.0, float(ann.get("width", 8)))
         a_len = max(5.0, float(ann.get("arrow_size", 20)))
         half_w = max(w * 2, a_len * 0.4)
@@ -472,8 +475,9 @@ class AnnotateImage(DataNode):
         w = float(ann.get("w", 100))
         h = float(ann.get("h", 100))
         rotation = float(ann.get("rotation", 0))
-        color = self._parse_color(ann.get("color", "#ff0000"))
-        width = max(1, int(ann.get("width", 2)))
+        color_str = ann.get("color", "") or ""
+        color = self._parse_color(color_str) if color_str else None
+        width = max(1, int(ann.get("width", 2))) if color_str else 0
         fill_color_str = ann.get("fill_color", "") or ""
         fill = self._parse_color(fill_color_str) if fill_color_str else None
         hw, hh = w / 2, h / 2
@@ -497,8 +501,9 @@ class AnnotateImage(DataNode):
         h = float(ann.get("h", 100))
         fill_color_str = ann.get("fill_color", "") or ""
         fill = self._parse_color(fill_color_str) if fill_color_str else None
-        color = self._parse_color(ann.get("color", "#ff0000"))
-        width = max(1, int(ann.get("width", 2)))
+        color_str = ann.get("color", "") or ""
+        color = self._parse_color(color_str) if color_str else None
+        width = max(1, int(ann.get("width", 2))) if color_str else 0
         hw, hh = w / 2, h / 2
         # Anchor: compute actual center from stored position + anchor offset
         ah = ann.get("anchor_h", "center")

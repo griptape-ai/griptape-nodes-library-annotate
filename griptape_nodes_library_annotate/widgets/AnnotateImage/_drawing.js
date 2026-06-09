@@ -249,7 +249,8 @@ export function createDrawing(getState) {
     const cp1y = isBezier ? cps.cp1y : null;
     const cp2x = isBezier ? cps.cp2x : null;
     const cp2y = isBezier ? cps.cp2y : null;
-    drawArrowLine(ann.x1, ann.y1, ann.x2, ann.y2, ann.color || DEFAULT_COLOR, ann.width || DEFAULT_ARROW_WIDTH,
+    if (!ann.color) return;
+    drawArrowLine(ann.x1, ann.y1, ann.x2, ann.y2, ann.color, ann.width || DEFAULT_ARROW_WIDTH,
       ann.arrow_size ?? DEFAULT_ARROW_SIZE,
       cp1x, cp1y, cp2x, cp2y, ann.has_start_arrow ?? false, ann.has_end_arrow ?? true, ann.taper ?? false);
     if (selected) {
@@ -301,9 +302,8 @@ export function createDrawing(getState) {
     ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
-    ctx.strokeStyle = ann.color || DEFAULT_COLOR;
     if (ann.fill_color) { ctx.fillStyle = ann.fill_color; ctx.fillRect(-hw, -hh, hw * 2, hh * 2); }
-    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+    if (ann.color) { ctx.strokeStyle = ann.color; ctx.strokeRect(-hw, -hh, hw * 2, hh * 2); }
     if (isHovered(ann) && !selected) {
       const pad = HOVER_PAD / displayScale;
       ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
@@ -323,11 +323,10 @@ export function createDrawing(getState) {
     ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
-    ctx.strokeStyle = ann.color || DEFAULT_COLOR;
     ctx.beginPath();
     ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
     if (ann.fill_color) { ctx.fillStyle = ann.fill_color; ctx.fill(); }
-    ctx.stroke();
+    if (ann.color) { ctx.strokeStyle = ann.color; ctx.stroke(); }
     if (isHovered(ann) && !selected) {
       const pad = HOVER_PAD / displayScale;
       ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
