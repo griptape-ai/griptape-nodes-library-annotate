@@ -125,5 +125,9 @@ export function injectStyles() {
     .ais-hud-sep { width:1px; height:18px; background:var(--border); margin:0 2px; flex-shrink:0; }
     .ais-cp-swatch { width:22px; height:22px; border-radius:50%; border:2px solid var(--border,#555); cursor:pointer; flex-shrink:0; padding:0; box-sizing:border-box; background-color:transparent; overflow:hidden; display:flex; align-items:center; justify-content:center; }
     .ais-cp-swatch:hover { border-color:var(--foreground,#aaa); }
+    .ais-popup-btn { display:flex; align-items:center; gap:5px; padding:3px 9px; height:28px; border:none; cursor:pointer; border-radius:6px; background:var(--muted); color:var(--foreground); font-size:11px; font-weight:600; font-family:inherit; flex-shrink:0; transition:background 0.15s; }
+    .ais-popup-btn:hover { background:var(--accent,rgba(122,157,184,0.2)); color:var(--foreground); }
+    .ais-popup-btn.active { box-shadow:0 0 0 1.5px #7a9db8,0 0 6px 1px rgba(122,157,184,0.25); }
+    .ais-popup-btn.disabled { opacity:0.35; pointer-events:none; }
   `;
 }

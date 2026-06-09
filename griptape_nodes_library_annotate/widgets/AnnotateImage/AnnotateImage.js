@@ -537,7 +537,6 @@ export default function AnnotateImageSimple(container, props) {
   let dismissLayerPopup = null;
   let updateLayersBtn = null;
   let dismissLayersPanel = null;
-  let buildPositionControls = null;
   let buildToolSettings = null;
   let buildAnnotationSettings = null;
   let buildMultiSettings = null;
@@ -551,15 +550,6 @@ export default function AnnotateImageSimple(container, props) {
     updateHud?.();
     updateLayersBtn?.();
     settingsArea.innerHTML = "";
-
-    // Determine the active positional annotation (text/rect/ellipse) for the always-visible controls.
-    const _posAnn = () => {
-      const selIds = currentValue.selected_ids || [];
-      if (selIds.length !== 1) return null;
-      const a = _effectiveAnnotations().find((ann) => ann.id === selIds[0]);
-      return (a && (a.type === "text" || a.type === "rect" || a.type === "ellipse")) ? a : null;
-    };
-    buildPositionControls?.(_posAnn());
 
     if (activeTool === "select") {
       const selIds = currentValue.selected_ids || [];
@@ -2422,7 +2412,6 @@ export default function AnnotateImageSimple(container, props) {
     emit: _emit,
     rebuild: () => rebuildSettings(),
   });
-  buildPositionControls = _settingsMod.buildPositionControls;
   buildToolSettings = _settingsMod.buildToolSettings;
   buildAnnotationSettings = _settingsMod.buildAnnotationSettings;
   buildMultiSettings = _settingsMod.buildMultiSettings;
