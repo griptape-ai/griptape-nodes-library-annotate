@@ -384,7 +384,10 @@ class AnnotateImage(DataNode):
         cp1y = float(ann.get("cp1y", y1 + (y2 - y1) / 3))
         cp2x = float(ann.get("cp2x", x1 + (x2 - x1) * 2 / 3))
         cp2y = float(ann.get("cp2y", y1 + (y2 - y1) * 2 / 3))
-        color = self._parse_color(ann.get("color", "#ff0000"))
+        color_str = ann.get("color", "") or ""
+        if not color_str:
+            return
+        color = self._parse_color(color_str)
         w = max(1.0, float(ann.get("width", 8)))
         a_len = max(5.0, float(ann.get("arrow_size", 20)))
         half_w = max(w * 2, a_len * 0.4)
