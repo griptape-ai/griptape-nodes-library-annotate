@@ -63,6 +63,8 @@ export function createStylePopup(settingsArea, {
   // Bezier + taper icon toggles — shown under STYLE.
   // taperMinOpts: { value, min, max, step, onChange } — when provided and source.taper is true,
   // a compact scrubby "Min" field is appended inline after the taper button.
+  // Returns { setTaperMax(newMax) } so the width row can update the taperMin ceiling live.
+  // setTaperMax is null when taper is off (no Min field rendered).
   function _mkArrowToggles(container, source, onToggle, taperMinOpts = null) {
     const makeIconBtn = (content, title, active, onClick) => {
       const btn = document.createElement("button");
@@ -77,6 +79,9 @@ export function createStylePopup(settingsArea, {
     row.style.cssText = "display:flex;align-items:center;gap:2px;";
     row.appendChild(makeIconBtn(mkIcon("bezier", 14), "Bezier curve",       source.is_bezier ?? false, () => onToggle({ is_bezier: !(source.is_bezier ?? false) })));
     row.appendChild(makeIconBtn(mkIcon("taper",  14), "Taper stroke width", source.taper     ?? false, () => onToggle({ taper:     !(source.taper     ?? false) })));
+
+    let setTaperMax = null;
+
     if (source.taper && taperMinOpts) {
       const sep = document.createElement("div");
       sep.style.cssText = "width:1px;height:18px;background:var(--border);margin:0 4px;flex-shrink:0;";
@@ -88,7 +93,8 @@ export function createStylePopup(settingsArea, {
       inp.type = "number";
       inp.value = Math.round((taperMinOpts.value ?? 0) * 10) / 10;
       if (taperMinOpts.min !== undefined) inp.min = taperMinOpts.min;
-      if (taperMinOpts.max !== undefined) inp.max = taperMinOpts.max;
+      let currentMax = taperMinOpts.max;
+      if (currentMax !== undefined) inp.max = currentMax;
       inp.step = taperMinOpts.step ?? 1;
       inp.style.cssText = [
         "width:52px", "min-width:0",
@@ -103,7 +109,7 @@ export function createStylePopup(settingsArea, {
       const _step = taperMinOpts.step ?? 1;
       const _clamp = (v) => {
         if (taperMinOpts.min !== undefined) v = Math.max(taperMinOpts.min, v);
-        if (taperMinOpts.max !== undefined) v = Math.min(taperMinOpts.max, v);
+        if (currentMax !== undefined) v = Math.min(currentMax, v);
         return v;
       };
       lbl.addEventListener("pointerdown", (e) => {
@@ -128,8 +134,19 @@ export function createStylePopup(settingsArea, {
       inp.addEventListener("focus",   () => inp.select());
       row.appendChild(lbl);
       row.appendChild(inp);
+
+      setTaperMax = (newMax) => {
+        currentMax = newMax;
+        inp.max = newMax;
+        const clamped = _clamp(Number(inp.value));
+        if (clamped !== Number(inp.value)) {
+          inp.value = Math.round(clamped * 10) / 10;
+          taperMinOpts.onChange?.(clamped, true);
+        }
+      };
     }
     container.appendChild(row);
+    return { setTaperMax };
   }
 
   // Per-end cap shape selectors — shown under HEAD.
@@ -267,16 +284,18 @@ export function createStylePopup(settingsArea, {
   function _buildArrowToolContent(popup, ts) {
     const currentWidth = ts.width ?? DEFAULT_ARROW_WIDTH;
     mkSectionLabel(popup, "Stroke");
+    let setTaperMax = null;
     mkScrubNumRow(popup, "Width", currentWidth,
       { min: MIN_ARROW_WIDTH, max: MAX_ARROW_WIDTH, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings.arrow.width = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        setTaperMax?.(Math.max(1, sz - 1));
         renderCanvas(); if (doEmit) emit();
       } });
     mkDivider(popup);
     mkSectionLabel(popup, "Style");
-    _mkArrowToggles(popup, ts, (changes) => {
+    ({ setTaperMax } = _mkArrowToggles(popup, ts, (changes) => {
       const s = getState();
       s.toolSettings.arrow = { ...s.toolSettings.arrow, ...changes };
       setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
@@ -288,7 +307,7 @@ export function createStylePopup(settingsArea, {
       s.toolSettings.arrow.taperMin = sz;
       setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
       renderCanvas(); if (doEmit) emit();
-    } });
+    } }));
     mkDivider(popup);
     mkSectionLabel(popup, "Head");
     _mkArrowShapeRows(popup, ts, (changes) => {
@@ -372,17 +391,19 @@ export function createStylePopup(settingsArea, {
     const currentWidth = ann.width ?? DEFAULT_ARROW_WIDTH;
     const effectiveHeadWidth = ann.arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH;
     mkSectionLabel(popup, "Stroke");
+    let setTaperMax = null;
     mkScrubNumRow(popup, "Width", currentWidth,
       { min: MIN_ARROW_WIDTH, max: MAX_ARROW_WIDTH, step: 1, onChange: (sz, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, width: sz }));
         const s = getState();
         s.toolSettings.arrow.width = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        setTaperMax?.(Math.max(1, sz - 1));
         renderCanvas(); if (doEmit) emit();
       } });
     mkDivider(popup);
     mkSectionLabel(popup, "Style");
-    _mkArrowToggles(popup, ann, (changes) => {
+    ({ setTaperMax } = _mkArrowToggles(popup, ann, (changes) => {
       applySingleUpdate(ann.id, (a) => ({ ...a, ...changes }));
       const s = getState();
       s.toolSettings.arrow = { ...s.toolSettings.arrow, ...changes };
@@ -397,7 +418,7 @@ export function createStylePopup(settingsArea, {
       s.toolSettings.arrow.taperMin = sz;
       setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
       renderCanvas(); if (doEmit) emit();
-    } });
+    } }));
     mkDivider(popup);
     mkSectionLabel(popup, "Head");
     _mkArrowShapeRows(popup, ann, (changes) => {
