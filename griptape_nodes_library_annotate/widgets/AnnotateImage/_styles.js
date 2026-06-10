@@ -14,9 +14,13 @@ export const DEFAULT_ARROW_WIDTH   = 8;
 export const MIN_ARROW_WIDTH       = 1;
 export const MAX_ARROW_WIDTH       = 40;
 
-export const DEFAULT_ARROW_SIZE    = 20;
-export const MIN_ARROW_SIZE        = 5;
-export const MAX_ARROW_SIZE        = 80;
+export const DEFAULT_ARROW_SIZE       = 20;
+export const MIN_ARROW_SIZE           = 5;
+export const MAX_ARROW_SIZE           = 100;
+
+export const DEFAULT_ARROW_HEAD_WIDTH = 32;
+export const MIN_ARROW_HEAD_WIDTH     = 2;
+export const MAX_ARROW_HEAD_WIDTH     = 200;
 
 export const DEFAULT_SHAPE_WIDTH   = 8;
 export const MIN_SHAPE_WIDTH       = 1;
@@ -92,7 +96,7 @@ export function defaultData() {
     tool_settings: {
       paint:   { color: DEFAULT_COLOR, size: DEFAULT_PAINT_SIZE, pressure: false, pressureMin: 0 },
       text:    { color: DEFAULT_COLOR, font_size: DEFAULT_TEXT_SIZE, text_align: "left", bg_color: "" },
-      arrow:   { color: DEFAULT_COLOR, width: DEFAULT_ARROW_WIDTH, arrow_size: DEFAULT_ARROW_SIZE, has_start_arrow: false, has_end_arrow: true, is_bezier: false, taper: false },
+      arrow:   { color: DEFAULT_COLOR, width: DEFAULT_ARROW_WIDTH, arrow_size: DEFAULT_ARROW_SIZE, arrow_head_width: DEFAULT_ARROW_HEAD_WIDTH, start_arrow_shape: "none", end_arrow_shape: "triangle", is_bezier: false, taper: false, taperMin: 0 },
       rect:    { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "" },
       ellipse: { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "" },
     },
@@ -125,5 +129,9 @@ export function injectStyles() {
     .ais-hud-sep { width:1px; height:18px; background:var(--border); margin:0 2px; flex-shrink:0; }
     .ais-cp-swatch { width:22px; height:22px; border-radius:50%; border:2px solid var(--border,#555); cursor:pointer; flex-shrink:0; padding:0; box-sizing:border-box; background-color:transparent; overflow:hidden; display:flex; align-items:center; justify-content:center; }
     .ais-cp-swatch:hover { border-color:var(--foreground,#aaa); }
+    .ais-popup-btn { display:flex; align-items:center; gap:5px; padding:3px 9px; height:28px; border:none; cursor:pointer; border-radius:6px; background:var(--muted); color:var(--foreground); font-size:11px; font-weight:600; font-family:inherit; flex-shrink:0; transition:background 0.15s; }
+    .ais-popup-btn:hover { background:var(--accent,rgba(122,157,184,0.2)); color:var(--foreground); }
+    .ais-popup-btn.active { box-shadow:0 0 0 1.5px #7a9db8,0 0 6px 1px rgba(122,157,184,0.25); }
+    .ais-popup-btn.disabled { opacity:0.35; pointer-events:none; }
   `;
 }

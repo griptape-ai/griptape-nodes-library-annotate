@@ -377,6 +377,90 @@ class AnnotateImage(DataNode):
         cropped = rotated.crop((rot_pad, rot_pad, rot_pad + overlay.width, rot_pad + overlay.height))
         overlay.alpha_composite(cropped)
 
+    @staticmethod
+    def _draw_rounded_line(
+        draw: ImageDraw.ImageDraw,
+        p1: tuple,
+        p2: tuple,
+        color: tuple,
+        width: float,
+    ) -> None:
+        """Line with round caps — same ellipse+line pattern used for the arrow stroke."""
+        r = width / 2
+        for cx, cy in [p1, p2]:
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+        draw.line([p1, p2], fill=color, width=int(width))
+
+    @staticmethod
+    def _cap_setback(shape: str, a_len: float, half_w: float) -> float:
+        if not shape or shape == "none" or shape == "bar":
+            return 0.0
+        if shape == "dot":
+            return half_w
+        if shape == "square":
+            return half_w / 2
+        return a_len  # triangle, open, diamond
+
+    def _draw_arrow_cap(
+        self,
+        draw: ImageDraw.ImageDraw,
+        tip_x: float,
+        tip_y: float,
+        cos_a: float,
+        sin_a: float,
+        a_len: float,
+        half_w: float,
+        shape: str,
+        color: tuple,
+        stroke_w: float,
+    ) -> None:
+        if not shape or shape == "none":
+            return
+        px, py = -sin_a, cos_a
+        bx = tip_x - a_len * cos_a
+        by = tip_y - a_len * sin_a
+        if shape == "triangle":
+            draw.polygon(
+                [(tip_x, tip_y), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)],
+                fill=color,
+            )
+        elif shape == "open":
+            p_left = (bx + half_w * px, by + half_w * py)
+            p_right = (bx - half_w * px, by - half_w * py)
+            p_tip = (tip_x, tip_y)
+            self._draw_rounded_line(draw, p_left, p_tip, color, stroke_w)
+            self._draw_rounded_line(draw, p_tip, p_right, color, stroke_w)
+        elif shape == "dot":
+            r = half_w / 2
+            cx = tip_x - r * cos_a
+            cy = tip_y - r * sin_a
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+        elif shape == "bar":
+            p1 = (tip_x + half_w * px, tip_y + half_w * py)
+            p2 = (tip_x - half_w * px, tip_y - half_w * py)
+            self._draw_rounded_line(draw, p1, p2, color, stroke_w)
+        elif shape == "square":
+            hs = half_w / 2
+            cx = tip_x - hs * cos_a
+            cy = tip_y - hs * sin_a
+            corners = [
+                (cx + hs * cos_a + hs * px, cy + hs * sin_a + hs * py),
+                (cx - hs * cos_a + hs * px, cy - hs * sin_a + hs * py),
+                (cx - hs * cos_a - hs * px, cy - hs * sin_a - hs * py),
+                (cx + hs * cos_a - hs * px, cy + hs * sin_a - hs * py),
+            ]
+            draw.polygon(corners, fill=color)
+        elif shape == "diamond":
+            mx = tip_x - a_len / 2 * cos_a
+            my = tip_y - a_len / 2 * sin_a
+            corners = [
+                (tip_x, tip_y),
+                (mx + half_w * px, my + half_w * py),
+                (bx, by),
+                (mx - half_w * px, my - half_w * py),
+            ]
+            draw.polygon(corners, fill=color)
+
     def _draw_arrow(self, draw: ImageDraw.ImageDraw, ann: dict) -> None:
         x1, y1 = float(ann.get("x1", 0)), float(ann.get("y1", 0))
         x2, y2 = float(ann.get("x2", 0)), float(ann.get("y2", 0))
@@ -390,27 +474,34 @@ class AnnotateImage(DataNode):
         color = self._parse_color(color_str)
         w = max(1.0, float(ann.get("width", 8)))
         a_len = max(5.0, float(ann.get("arrow_size", 20)))
-        half_w = max(w * 2, a_len * 0.4)
-        has_end_arrow = bool(ann.get("has_end_arrow", True))
-        has_start_arrow = bool(ann.get("has_start_arrow", False))
-        taper = bool(ann.get("taper", False))
+        raw_hw = ann.get("arrow_head_width")
+        half_w = float(raw_hw) / 2 if raw_hw is not None else max(w * 2, a_len * 0.4)
 
-        setback = a_len
+        end_shape = ann.get("end_arrow_shape") or ("triangle" if ann.get("has_end_arrow", True) else "none")
+        start_shape = ann.get("start_arrow_shape") or ("triangle" if ann.get("has_start_arrow", False) else "none")
+
+        taper = bool(ann.get("taper", False))
+        taper_min = float(ann.get("taperMin", 0))
+
+        has_end = end_shape and end_shape != "none"
+        has_start = start_shape and start_shape != "none"
 
         # Arrowhead angles from tangent at endpoints
         end_angle = start_angle = 0.0
-        if has_end_arrow:
+        if has_end:
             dx, dy = x2 - cp2x, y2 - cp2y
             end_angle = math.atan2(dy, dx) if math.hypot(dx, dy) > 0.1 else math.atan2(y2 - y1, x2 - x1)
-        if has_start_arrow:
+        if has_start:
             dx, dy = x1 - cp1x, y1 - cp1y
             start_angle = math.atan2(dy, dx) if math.hypot(dx, dy) > 0.1 else math.atan2(y1 - y2, x1 - x2)
 
-        # Pull endpoints back to arrowhead base
-        lx2 = x2 - setback * math.cos(end_angle) if has_end_arrow else x2
-        ly2 = y2 - setback * math.sin(end_angle) if has_end_arrow else y2
-        lx1 = x1 - setback * math.cos(start_angle) if has_start_arrow else x1
-        ly1 = y1 - setback * math.sin(start_angle) if has_start_arrow else y1
+        # Pull endpoints back to leave room for each cap shape
+        end_sb = self._cap_setback(end_shape, a_len, half_w)
+        start_sb = self._cap_setback(start_shape, a_len, half_w)
+        lx2 = x2 - end_sb * math.cos(end_angle) if has_end else x2
+        ly2 = y2 - end_sb * math.sin(end_angle) if has_end else y2
+        lx1 = x1 - start_sb * math.cos(start_angle) if has_start else x1
+        ly1 = y1 - start_sb * math.sin(start_angle) if has_start else y1
 
         # Sample bezier and compute parametric speed (first derivative magnitude)
         n = 48
@@ -428,7 +519,8 @@ class AnnotateImage(DataNode):
             tangents.append((dvx, dvy, max(spd, 0.001)))
 
         min_spd = min(speeds)
-        is_straight = (max(speeds) - min_spd) < 0.001
+        max_spd = max(speeds)
+        is_straight = (max_spd - min_spd) < 0.001
 
         if not taper or is_straight:
             # Uniform width — round caps via overlapping circles + connecting lines
@@ -440,32 +532,57 @@ class AnnotateImage(DataNode):
                 draw.line([pts[i], pts[i + 1]], fill=color, width=int(w))
         else:
             # Velocity taper — thick in curves (slow), thin on straights (fast).
-            # Mirrors the JS formula: hw = (minSpd / spd) * w / 2
-            left_pts, right_pts = [], []
+            # Remap natural range [naturalMin, w/2] → [taperMin/2, w/2] so
+            # taperMin is the true minimum width, not just a floor.
+            natural_min = math.sqrt(min_spd / max_spd) * w / 2
+            taper_range = w / 2 - natural_min
+            left_pts, right_pts, hws = [], [], []
             for i in range(n + 1):
                 bx, by = pts[i]
                 dvx, dvy, spd = tangents[i]
-                hw = math.sqrt(min_spd / spd) * w / 2
+                hw_natural = math.sqrt(min_spd / spd) * w / 2
+                if taper_range < 0.001:
+                    hw = w / 2
+                else:
+                    hw = taper_min / 2 + (hw_natural - natural_min) * (w / 2 - taper_min / 2) / taper_range
+                hws.append(hw)
                 px, py = (-dvy / spd * hw, dvx / spd * hw)
                 left_pts.append((bx + px, by + py))
                 right_pts.append((bx - px, by - py))
-            polygon = left_pts + list(reversed(right_pts))
+            # Rounded caps: semicircle arcs at start and end, generated as polygon points.
+            # Decreasing angle sweeps through the outward (tip) direction at each end.
+            n_arc = 12
+            bx0, by0 = pts[0]
+            bx1, by1 = pts[1]
+            bxn, byn = pts[-1]
+            bxn1, byn1 = pts[-2]
+            start_tang = math.atan2(by1 - by0, bx1 - bx0)
+            end_tang = math.atan2(byn - byn1, bxn - bxn1)
+            end_arc = [
+                (
+                    bxn + hws[-1] * math.cos(end_tang + math.pi / 2 - j * math.pi / n_arc),
+                    byn + hws[-1] * math.sin(end_tang + math.pi / 2 - j * math.pi / n_arc),
+                )
+                for j in range(n_arc + 1)
+            ]
+            start_arc = [
+                (
+                    bx0 + hws[0] * math.cos(start_tang - math.pi / 2 - j * math.pi / n_arc),
+                    by0 + hws[0] * math.sin(start_tang - math.pi / 2 - j * math.pi / n_arc),
+                )
+                for j in range(n_arc + 1)
+            ]
+            polygon = left_pts + end_arc + list(reversed(right_pts)) + start_arc
             draw.polygon([(int(x), int(y)) for x, y in polygon], fill=color)
 
-        # Arrowheads — length controlled by a_len, base width by half_w
-        if has_end_arrow:
-            bx = x2 - a_len * math.cos(end_angle)
-            by = y2 - a_len * math.sin(end_angle)
-            px, py = -math.sin(end_angle), math.cos(end_angle)
-            draw.polygon(
-                [(x2, y2), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color
+        # Cap shapes — drawn after the stroke so they sit on top
+        if has_end:
+            self._draw_arrow_cap(
+                draw, x2, y2, math.cos(end_angle), math.sin(end_angle), a_len, half_w, end_shape, color, w
             )
-        if has_start_arrow:
-            bx = x1 - a_len * math.cos(start_angle)
-            by = y1 - a_len * math.sin(start_angle)
-            px, py = -math.sin(start_angle), math.cos(start_angle)
-            draw.polygon(
-                [(x1, y1), (bx + half_w * px, by + half_w * py), (bx - half_w * px, by - half_w * py)], fill=color
+        if has_start:
+            self._draw_arrow_cap(
+                draw, x1, y1, math.cos(start_angle), math.sin(start_angle), a_len, half_w, start_shape, color, w
             )
 
     def _draw_rect(self, draw: ImageDraw.ImageDraw, ann: dict, canvas_w: int = 0, canvas_h: int = 0) -> None:

@@ -537,7 +537,6 @@ export default function AnnotateImageSimple(container, props) {
   let dismissLayerPopup = null;
   let updateLayersBtn = null;
   let dismissLayersPanel = null;
-  let buildPositionControls = null;
   let buildToolSettings = null;
   let buildAnnotationSettings = null;
   let buildMultiSettings = null;
@@ -551,15 +550,6 @@ export default function AnnotateImageSimple(container, props) {
     updateHud?.();
     updateLayersBtn?.();
     settingsArea.innerHTML = "";
-
-    // Determine the active positional annotation (text/rect/ellipse) for the always-visible controls.
-    const _posAnn = () => {
-      const selIds = currentValue.selected_ids || [];
-      if (selIds.length !== 1) return null;
-      const a = _effectiveAnnotations().find((ann) => ann.id === selIds[0]);
-      return (a && (a.type === "text" || a.type === "rect" || a.type === "ellipse")) ? a : null;
-    };
-    buildPositionControls?.(_posAnn());
 
     if (activeTool === "select") {
       const selIds = currentValue.selected_ids || [];
@@ -742,7 +732,9 @@ export default function AnnotateImageSimple(container, props) {
         currentArrow.x1, currentArrow.y1, currentArrow.x2, currentArrow.y2,
         ts.color || DEFAULT_COLOR, ts.width || DEFAULT_ARROW_WIDTH, ts.arrow_size ?? DEFAULT_ARROW_SIZE,
         null, null, null, null,
-        ts.has_start_arrow ?? false, ts.has_end_arrow ?? true, ts.taper ?? false
+        ts.start_arrow_shape ?? (ts.has_start_arrow ? "triangle" : "none"),
+        ts.end_arrow_shape   ?? (ts.has_end_arrow !== false ? "triangle" : "none"),
+        ts.taper ?? false, ts.taperMin ?? 0, ts.arrow_head_width ?? null
       );
     }
 
@@ -2021,8 +2013,8 @@ export default function AnnotateImageSimple(container, props) {
           color: ts.color,
           width: ts.width,
           arrow_size: ts.arrow_size ?? DEFAULT_ARROW_SIZE,
-          has_start_arrow: ts.has_start_arrow ?? false,
-          has_end_arrow: ts.has_end_arrow ?? true,
+          start_arrow_shape: ts.start_arrow_shape ?? (ts.has_start_arrow ? "triangle" : "none"),
+          end_arrow_shape:   ts.end_arrow_shape   ?? (ts.has_end_arrow !== false ? "triangle" : "none"),
           is_bezier: ts.is_bezier ?? false,
           taper: ts.taper ?? false,
           layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
@@ -2417,12 +2409,14 @@ export default function AnnotateImageSimple(container, props) {
     applySingleUpdate: _applySingleUpdate,
     applyAnnotationMap: _applyAnnotationMap,
     effectiveAnnotations: _effectiveAnnotations,
+    getAnnotationBounds: _getAnnotationBounds,
     autoResizeTextarea: _autoResizeTextarea,
     renderCanvas,
     emit: _emit,
     rebuild: () => rebuildSettings(),
+    rebuildTxFrame: () => _buildTxFrame(),
+    forceRebuildTxFrame: () => { txFrame = null; _buildTxFrame(); },
   });
-  buildPositionControls = _settingsMod.buildPositionControls;
   buildToolSettings = _settingsMod.buildToolSettings;
   buildAnnotationSettings = _settingsMod.buildAnnotationSettings;
   buildMultiSettings = _settingsMod.buildMultiSettings;
