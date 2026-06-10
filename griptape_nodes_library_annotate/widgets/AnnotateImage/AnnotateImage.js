@@ -2411,6 +2411,7 @@ export default function AnnotateImageSimple(container, props) {
     renderCanvas,
     emit: _emit,
     rebuild: () => rebuildSettings(),
+    rebuildTxFrame: () => _buildTxFrame(),
   });
   buildToolSettings = _settingsMod.buildToolSettings;
   buildAnnotationSettings = _settingsMod.buildAnnotationSettings;

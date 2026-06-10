@@ -9,9 +9,8 @@
 // Multi-select:     Scale% slider (line widths only), head size if arrows present
 
 import { mkIcon } from './_icons.js';
-import { buildPopupTrigger, wirePopupToggle, mkSectionLabel, mkDivider } from './_popup_utils.js';
+import { buildPopupTrigger, wirePopupToggle, mkSectionLabel, mkDivider, mkScrubNumRow } from './_popup_utils.js';
 import {
-  DEFAULT_COLOR,
   DEFAULT_PAINT_SIZE, MIN_PAINT_SIZE, MAX_PAINT_SIZE,
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
@@ -33,46 +32,6 @@ export function createStylePopup(settingsArea, {
 }) {
 
   // ── shared UI primitives ─────────────────────────────────────────────────────
-
-  function _fmtNum(v) {
-    const n = Number(v);
-    if (!isFinite(n)) return "0";
-    if (Number.isInteger(n)) return String(n);
-    const r = Math.round(n * 100) / 100;
-    return Number.isInteger(r) ? String(r) : r.toFixed(2).replace(/0+$/, "");
-  }
-
-  // Adds a labeled range slider + value readout to container.
-  function _mkSlider(container, label, min, max, value, onChange) {
-    const wrap = document.createElement("div");
-    wrap.style.cssText = "display:flex;align-items:center;gap:6px;";
-
-    const lbl = document.createElement("span");
-    lbl.className = "ais-setting-label";
-    lbl.textContent = label;
-    wrap.appendChild(lbl);
-
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.className = "ais-range";
-    slider.style.cssText = "flex:1;min-width:60px;";
-    slider.min = min; slider.max = max; slider.value = value;
-
-    const valLbl = document.createElement("span");
-    valLbl.className = "ais-val-label";
-    valLbl.textContent = _fmtNum(value);
-
-    slider.addEventListener("input", () => {
-      const sz = Number(slider.value);
-      valLbl.textContent = _fmtNum(sz);
-      onChange(sz, false);
-    });
-    slider.addEventListener("change", () => onChange(Number(slider.value), true));
-
-    wrap.appendChild(slider);
-    wrap.appendChild(valLbl);
-    container.appendChild(wrap);
-  }
 
   // Adds text alignment toggle buttons to container.
   function _mkTextAlignButtons(container, currentAlign, onChange) {
@@ -133,13 +92,13 @@ export function createStylePopup(settingsArea, {
 
   function _buildPaintToolContent(popup, ts) {
     mkSectionLabel(popup, "Brush");
-    _mkSlider(popup, "Size", MIN_PAINT_SIZE, MAX_PAINT_SIZE, ts.size ?? DEFAULT_PAINT_SIZE,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Size", ts.size ?? DEFAULT_PAINT_SIZE,
+      { min: MIN_PAINT_SIZE, max: MAX_PAINT_SIZE, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings.paint.size = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
     mkDivider(popup);
     mkSectionLabel(popup, "Pressure");
     const pressureOn = ts.pressure ?? false;
@@ -155,7 +114,9 @@ export function createStylePopup(settingsArea, {
       const s = getState();
       s.toolSettings.paint.pressure = !pressureOn;
       setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-      rebuild(); emit();
+      emit();
+      popup.innerHTML = "";
+      _buildPaintToolContent(popup, getState().toolSettings.paint);
     });
     pressureRow.appendChild(pressureBtn);
     const pressureLbl = document.createElement("span");
@@ -166,20 +127,20 @@ export function createStylePopup(settingsArea, {
 
     if (pressureOn) {
       const currentMax = ts.size ?? DEFAULT_PAINT_SIZE;
-      _mkSlider(popup, "Min", 0, Math.max(1, currentMax - 1), ts.pressureMin ?? 1,
-        (sz, doEmit) => {
+      mkScrubNumRow(popup, "Min size", ts.pressureMin ?? 1,
+        { min: 0, max: Math.max(1, currentMax - 1), step: 1, onChange: (sz, doEmit) => {
           const s = getState();
           s.toolSettings.paint.pressureMin = sz;
           setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
           if (doEmit) emit();
-        });
+        } });
     }
   }
 
   function _buildTextToolContent(popup, ts) {
     mkSectionLabel(popup, "Font");
-    _mkSlider(popup, "Size", MIN_TEXT_SIZE, MAX_TEXT_SIZE, ts.font_size ?? DEFAULT_TEXT_SIZE,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Size", ts.font_size ?? DEFAULT_TEXT_SIZE,
+      { min: MIN_TEXT_SIZE, max: MAX_TEXT_SIZE, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings.text.font_size = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
@@ -194,7 +155,7 @@ export function createStylePopup(settingsArea, {
           });
         }
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
     mkDivider(popup);
     mkSectionLabel(popup, "Alignment");
     _mkTextAlignButtons(popup, ts.text_align || "left", (align) => {
@@ -216,20 +177,20 @@ export function createStylePopup(settingsArea, {
 
   function _buildArrowToolContent(popup, ts) {
     mkSectionLabel(popup, "Stroke");
-    _mkSlider(popup, "Width", MIN_ARROW_WIDTH, MAX_ARROW_WIDTH, ts.width ?? DEFAULT_ARROW_WIDTH,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Width", ts.width ?? DEFAULT_ARROW_WIDTH,
+      { min: MIN_ARROW_WIDTH, max: MAX_ARROW_WIDTH, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings.arrow.width = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
-    _mkSlider(popup, "Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE, ts.arrow_size ?? DEFAULT_ARROW_SIZE,
-      (sz, doEmit) => {
+      } });
+    mkScrubNumRow(popup, "Head size", ts.arrow_size ?? DEFAULT_ARROW_SIZE,
+      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings.arrow.arrow_size = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
     mkDivider(popup);
     mkSectionLabel(popup, "Style");
     _mkArrowToggles(popup, ts, (changes) => {
@@ -242,13 +203,13 @@ export function createStylePopup(settingsArea, {
 
   function _buildShapeToolContent(popup, ts, activeTool) {
     mkSectionLabel(popup, "Stroke");
-    _mkSlider(popup, "Width", MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH, ts.width ?? DEFAULT_SHAPE_WIDTH,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Width", ts.width ?? DEFAULT_SHAPE_WIDTH,
+      { min: MIN_SHAPE_WIDTH, max: MAX_SHAPE_WIDTH, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings[activeTool].width = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
   }
 
   // ── annotation-mode content builders ────────────────────────────────────────
@@ -257,19 +218,20 @@ export function createStylePopup(settingsArea, {
     const baseSize = (ann.strokes && ann.strokes[0]) ? (ann.strokes[0].size ?? DEFAULT_PAINT_SIZE) : DEFAULT_PAINT_SIZE;
     const currentSize = Math.max(MIN_PAINT_SIZE, Math.round(baseSize * (ann.sizeScale ?? 1)));
     mkSectionLabel(popup, "Brush");
-    _mkSlider(popup, "Size", MIN_PAINT_SIZE, MAX_PAINT_SIZE, currentSize, (sz, doEmit) => {
-      applySingleUpdate(ann.id, (a) => ({ ...a, sizeScale: sz / baseSize }));
-      const s = getState();
-      s.toolSettings.paint.size = sz;
-      setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-      renderCanvas(); if (doEmit) emit();
-    });
+    mkScrubNumRow(popup, "Size", currentSize,
+      { min: MIN_PAINT_SIZE, max: MAX_PAINT_SIZE, step: 1, onChange: (sz, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, sizeScale: sz / baseSize }));
+        const s = getState();
+        s.toolSettings.paint.size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
   }
 
   function _buildTextAnnContent(popup, ann) {
     mkSectionLabel(popup, "Font");
-    _mkSlider(popup, "Size", MIN_TEXT_SIZE, MAX_TEXT_SIZE, ann.font_size ?? DEFAULT_TEXT_SIZE,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Size", ann.font_size ?? DEFAULT_TEXT_SIZE,
+      { min: MIN_TEXT_SIZE, max: MAX_TEXT_SIZE, step: 1, onChange: (sz, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, font_size: sz }));
         const s = getState();
         s.toolSettings.text.font_size = sz;
@@ -279,7 +241,7 @@ export function createStylePopup(settingsArea, {
           autoResizeTextarea();
         }
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
     mkDivider(popup);
     mkSectionLabel(popup, "Alignment");
     _mkTextAlignButtons(popup, ann.text_align || "left", (align) => {
@@ -294,22 +256,22 @@ export function createStylePopup(settingsArea, {
 
   function _buildArrowAnnContent(popup, ann) {
     mkSectionLabel(popup, "Stroke");
-    _mkSlider(popup, "Width", MIN_ARROW_WIDTH, MAX_ARROW_WIDTH, ann.width ?? DEFAULT_ARROW_WIDTH,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Width", ann.width ?? DEFAULT_ARROW_WIDTH,
+      { min: MIN_ARROW_WIDTH, max: MAX_ARROW_WIDTH, step: 1, onChange: (sz, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, width: sz }));
         const s = getState();
         s.toolSettings.arrow.width = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
-    _mkSlider(popup, "Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE, ann.arrow_size ?? DEFAULT_ARROW_SIZE,
-      (sz, doEmit) => {
+      } });
+    mkScrubNumRow(popup, "Head size", ann.arrow_size ?? DEFAULT_ARROW_SIZE,
+      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, arrow_size: sz }));
         const s = getState();
         s.toolSettings.arrow.arrow_size = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
     mkDivider(popup);
     mkSectionLabel(popup, "Style");
     _mkArrowToggles(popup, ann, (changes) => {
@@ -323,14 +285,14 @@ export function createStylePopup(settingsArea, {
 
   function _buildShapeAnnContent(popup, ann) {
     mkSectionLabel(popup, "Stroke");
-    _mkSlider(popup, "Width", MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH, ann.width ?? DEFAULT_SHAPE_WIDTH,
-      (sz, doEmit) => {
+    mkScrubNumRow(popup, "Width", ann.width ?? DEFAULT_SHAPE_WIDTH,
+      { min: MIN_SHAPE_WIDTH, max: MAX_SHAPE_WIDTH, step: 1, onChange: (sz, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, width: sz }));
         const s = getState();
         s.toolSettings[ann.type].width = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
-      });
+      } });
   }
 
   // ── multi-select content ─────────────────────────────────────────────────────
@@ -346,37 +308,38 @@ export function createStylePopup(settingsArea, {
       } else if (a.type === "rect" || a.type === "ellipse") origSizes[a.id] = a.width ?? DEFAULT_SHAPE_WIDTH;
     }
     mkSectionLabel(popup, "Scale");
-    _mkSlider(popup, "Scale %", 25, 400, 100, (val, doEmit) => {
-      const ratio = val / 100;
-      const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
-        if (a.type === "paint")   return { ...a, sizeScale: (origSizes[a.id] ?? 1) * ratio };
-        if (a.type === "text")    return a;
-        if (a.type === "arrow")   return {
-          ...a,
-          width:      Math.max(1, (origSizes[a.id] ?? DEFAULT_ARROW_WIDTH) * ratio),
-          arrow_size: Math.max(5, (origArrowSizes[a.id] ?? DEFAULT_ARROW_SIZE) * ratio),
-        };
-        if (a.type === "rect" || a.type === "ellipse") return {
-          ...a, width: Math.max(1, (origSizes[a.id] ?? DEFAULT_SHAPE_WIDTH) * ratio),
-        };
-        return a;
-      });
-      setCurrentValue({ ...getState().currentValue, annotations, overrides });
-      renderCanvas(); if (doEmit) emit();
-    });
+    mkScrubNumRow(popup, "Scale", 100,
+      { min: 25, max: 400, step: 1, unit: "%", onChange: (val, doEmit) => {
+        const ratio = val / 100;
+        const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
+          if (a.type === "paint")   return { ...a, sizeScale: (origSizes[a.id] ?? 1) * ratio };
+          if (a.type === "text")    return a;
+          if (a.type === "arrow")   return {
+            ...a,
+            width:      Math.max(1, (origSizes[a.id] ?? DEFAULT_ARROW_WIDTH) * ratio),
+            arrow_size: Math.max(5, (origArrowSizes[a.id] ?? DEFAULT_ARROW_SIZE) * ratio),
+          };
+          if (a.type === "rect" || a.type === "ellipse") return {
+            ...a, width: Math.max(1, (origSizes[a.id] ?? DEFAULT_SHAPE_WIDTH) * ratio),
+          };
+          return a;
+        });
+        setCurrentValue({ ...getState().currentValue, annotations, overrides });
+        renderCanvas(); if (doEmit) emit();
+      } });
     const arrowAnns = anns.filter((a) => a.type === "arrow");
     if (arrowAnns.length > 0) {
       mkDivider(popup);
       mkSectionLabel(popup, "Arrow Head");
-      _mkSlider(popup, "Head", MIN_ARROW_SIZE, MAX_ARROW_SIZE,
-        arrowAnns[0].arrow_size ?? DEFAULT_ARROW_SIZE, (sz, doEmit) => {
+      mkScrubNumRow(popup, "Head size", arrowAnns[0].arrow_size ?? DEFAULT_ARROW_SIZE,
+        { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
           const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
             if (a.type === "arrow") return { ...a, arrow_size: sz };
             return a;
           });
           setCurrentValue({ ...getState().currentValue, annotations, overrides });
           renderCanvas(); if (doEmit) emit();
-        });
+        } });
     }
   }
 

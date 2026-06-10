@@ -22,10 +22,11 @@ export function createSettings(settingsArea, {
   renderCanvas,
   emit,
   rebuild,
+  rebuildTxFrame,
 }) {
   const deps = {
     addTooltip, getState, setCurrentValue, applySingleUpdate, applyAnnotationMap,
-    effectiveAnnotations, autoResizeTextarea, renderCanvas, emit, rebuild,
+    effectiveAnnotations, autoResizeTextarea, renderCanvas, emit, rebuild, rebuildTxFrame,
   };
 
   const positionPopup = createPositionPopup(settingsArea, deps);
@@ -176,7 +177,18 @@ export function createSettings(settingsArea, {
   // Called when multiple annotations are selected.
 
   function buildMultiSettings(selIds) {
-    positionPopup.build(null);
+    // Deduplicate by ID — effectiveAnnotations() can return the same ID twice
+    // (imported + local) if there is an ID collision, which would cause double-transform.
+    const seen = new Set();
+    const allAnns = effectiveAnnotations()
+      .filter((a) => selIds.includes(a.id) && !seen.has(a.id) && seen.add(a.id));
+    const groupId = allAnns[0]?.group_id;
+    const isSingleGroup = !!groupId && allAnns.every((a) => a.group_id === groupId);
+    if (isSingleGroup) {
+      positionPopup.build({ type: "group", id: groupId, groupAnns: allAnns });
+    } else {
+      positionPopup.build(null);
+    }
     stylePopup.buildForMulti(selIds);
     _mkSeparator();
 
