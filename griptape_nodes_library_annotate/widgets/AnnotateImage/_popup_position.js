@@ -19,6 +19,7 @@ import {
 import {
   DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT,
 } from './_styles.js';
+import { snapshotAnn, defaultCps } from './_geometry.js';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
@@ -31,10 +32,12 @@ export function createPositionPopup(settingsArea, {
   applySingleUpdate,
   applyAnnotationMap,
   effectiveAnnotations,
+  getAnnotationBounds,
   renderCanvas,
   emit,
   rebuild,
   rebuildTxFrame,
+  forceRebuildTxFrame,
 }) {
 
   // ── anchor grid ──────────────────────────────────────────────────────────────
@@ -316,12 +319,9 @@ export function createPositionPopup(settingsArea, {
     ["Bottom Left", "Bottom Center", "Bottom Right"],
   ];
 
-  function _buildAlignGrid(container, ann, label = "Align to Canvas") {
-    const { currentValue } = getState();
-    const cw    = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
-    const ch    = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
-    const isPct = !!ann.percentage;
-
+  // _buildAlignGrid: getBounds() is called fresh on every click so bounds are never stale.
+  // onTranslate(dx, dy) receives the pixel delta to apply.
+  function _buildAlignGrid(container, cw, ch, getBounds, onTranslate, label = "Align to Canvas") {
     mkSectionLabel(container, label);
 
     const grid = document.createElement("div");
@@ -336,21 +336,38 @@ export function createPositionPopup(settingsArea, {
         addTooltip(btn, ALIGN_LABELS[r][c]);
         btn.appendChild(_mkAlignDot(r, c));
 
-        const xFrac = c / 2;
-        const yFrac = r / 2;
+        const xFrac = c / 2, yFrac = r / 2;
         btn.addEventListener("pointerdown", (e) => {
           e.stopPropagation();
-          applySingleUpdate(ann.id, (a) => ({
-            ...a,
-            x: isPct ? xFrac * 100 : xFrac * cw,
-            y: isPct ? yFrac * 100 : yFrac * ch,
-          }));
-          rebuildTxFrame(); renderCanvas(); emit();
+          const b = getBounds();
+          if (!b) return;
+          const bw = b.maxX - b.minX, bh = b.maxY - b.minY;
+          onTranslate(xFrac * (cw - bw) - b.minX, yFrac * (ch - bh) - b.minY);
         });
         grid.appendChild(btn);
       }
     }
     container.appendChild(grid);
+  }
+
+  // Shared helper: align grid for any single annotation (all types, px or %).
+  function _annAlignGrid(container, annId, cw, ch, label = "Align to Canvas") {
+    _buildAlignGrid(container, cw, ch,
+      () => {
+        if (!getAnnotationBounds) return null;
+        const a = effectiveAnnotations().find((x) => x.id === annId);
+        return a ? getAnnotationBounds(a) : null;
+      },
+      (dx, dy) => {
+        applySingleUpdate(annId, (a) => _translateAnn(
+          a,
+          a.percentage ? dx / cw * 100 : dx,
+          a.percentage ? dy / ch * 100 : dy,
+        ));
+        rebuildTxFrame(); renderCanvas(); emit();
+      },
+      label,
+    );
   }
 
   function _buildAnchorAlignRow(popup, ann) {
@@ -362,7 +379,10 @@ export function createPositionPopup(settingsArea, {
     row.appendChild(alignCol);
     popup.appendChild(row);
     _buildAnchorGrid(anchorCol, ann);
-    _buildAlignGrid(alignCol, ann, "Align");
+    const { currentValue } = getState();
+    const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
+    const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+    _annAlignGrid(alignCol, ann.id, cw, ch, "Align");
   }
 
   // ── popup content builders per annotation type ───────────────────────────────
@@ -435,6 +455,9 @@ export function createPositionPopup(settingsArea, {
   }
 
   function _buildArrowContent(popup, ann, dismiss) {
+    const { currentValue: cv0 } = getState();
+    const cw = cv0.canvas_width  || DEFAULT_CANVAS_WIDTH;
+    const ch = cv0.canvas_height || DEFAULT_CANVAS_HEIGHT;
     // "Position" moves both endpoints together; reference is the midpoint.
     let refX = Math.round(((ann.x1 ?? 0) + (ann.x2 ?? 0)) / 2);
     let refY = Math.round(((ann.y1 ?? 0) + (ann.y2 ?? 0)) / 2);
@@ -475,10 +498,15 @@ export function createPositionPopup(settingsArea, {
       },
     });
     mkDivider(popup);
+    _annAlignGrid(popup, ann.id, cw, ch);
+    mkDivider(popup);
     _buildOrderItems(popup, ann, dismiss);
   }
 
   function _buildPaintContent(popup, ann, dismiss) {
+    const { currentValue } = getState();
+    const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
+    const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
     mkSectionLabel(popup, "Position");
     mkXYPad(popup, Math.round(ann.x ?? 0), Math.round(ann.y ?? 0), {
       unit: "px", step: 1,
@@ -494,7 +522,7 @@ export function createPositionPopup(settingsArea, {
       rebuildTxFrame(); renderCanvas(); if (doEmit) emit();
     });
     mkDivider(popup);
-    _buildAlignGrid(popup, ann);
+    _annAlignGrid(popup, ann.id, cw, ch);
     mkDivider(popup);
     _buildOrderItems(popup, ann, dismiss);
   }
@@ -571,7 +599,7 @@ export function createPositionPopup(settingsArea, {
       }
 
       setCurrentValue({ ...cv, annotations: newAnnotations, overrides: newOverrides });
-      rebuildTxFrame(); renderCanvas(); if (doEmit) emit();
+      (forceRebuildTxFrame || rebuildTxFrame)(); renderCanvas(); if (doEmit) emit();
     }
 
     // ── Position ─────────────────────────────────────────────────────────────
@@ -592,51 +620,92 @@ export function createPositionPopup(settingsArea, {
     });
 
     // ── Rotation (orbits each member around the group centroid) ───────────────
+    // Snapshot originals at popup-open time so every dial move rotates from the
+    // initial state — same approach as the drag handle, avoids delta accumulation.
+    const origSnapshots = {};
+    for (const a of groupAnns) {
+      const snap = snapshotAnn(a);
+      snap._was_percentage = !!a.percentage;
+      snap._anchor_h = a.anchor_h || (a.type === "rect" || a.type === "ellipse" ? "center" : "left");
+      snap._anchor_v = a.anchor_v || (a.type === "rect" || a.type === "ellipse" ? "middle" : "top");
+      origSnapshots[a.id] = snap;
+    }
+
     mkDivider(popup);
     mkSectionLabel(popup, "Transform");
-    let refRotDeg = 0;
     _mkRotationDial(popup, 0, (newDeg, doEmit) => {
-      const deltaDeg = newDeg - refRotDeg;
-      refRotDeg = newDeg;
-      const deltaRad = deltaDeg * DEG_TO_RAD;
-      const cosD = Math.cos(deltaRad);
-      const sinD = Math.sin(deltaRad);
+      const totalRad = newDeg * DEG_TO_RAD;
+      const cos = Math.cos(totalRad), sin = Math.sin(totalRad);
+
+      function _rotPt(x, y) {
+        const rx = x - centroidX, ry = y - centroidY;
+        return { x: centroidX + rx * cos - ry * sin,
+                 y: centroidY + rx * sin + ry * cos };
+      }
 
       _applyGroupFn((a, cv) => {
+        const snap = origSnapshots[a.id];
+        if (!snap) return a;
         const cw = cv.canvas_width  || DEFAULT_CANVAS_WIDTH;
         const ch = cv.canvas_height || DEFAULT_CANVAS_HEIGHT;
 
-        function _rotPt(x, y) {
-          const rx = x - centroidX, ry = y - centroidY;
-          return { x: centroidX + rx * cosD - ry * sinD,
-                   y: centroidY + rx * sinD + ry * cosD };
-        }
-
         if (a.type === "arrow") {
-          const p1 = _rotPt(a.x1 ?? 0, a.y1 ?? 0);
-          const p2 = _rotPt(a.x2 ?? 0, a.y2 ?? 0);
-          const c1 = a.cp1x != null ? _rotPt(a.cp1x, a.cp1y) : null;
-          const c2 = a.cp2x != null ? _rotPt(a.cp2x, a.cp2y) : null;
-          return {
-            ...a,
-            x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
-            cp1x: c1 ? c1.x : null, cp1y: c1 ? c1.y : null,
-            cp2x: c2 ? c2.x : null, cp2y: c2 ? c2.y : null,
-          };
+          // snap already has resolved CPs via snapshotAnn → defaultCps
+          const p1 = _rotPt(snap.x1, snap.y1), p2 = _rotPt(snap.x2, snap.y2);
+          const c1 = _rotPt(snap.cp1x, snap.cp1y), c2 = _rotPt(snap.cp2x, snap.cp2y);
+          return { ...a, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+                   cp1x: c1.x, cp1y: c1.y, cp2x: c2.x, cp2y: c2.y };
         }
-
-        // Convert to pixels, rotate, convert back to native unit.
-        const xPx = a.percentage ? (a.x ?? 0) / 100 * cw : (a.x ?? 0);
-        const yPx = a.percentage ? (a.y ?? 0) / 100 * ch : (a.y ?? 0);
-        const np  = _rotPt(xPx, yPx);
-        return {
-          ...a,
-          x: a.percentage ? np.x / cw * 100 : np.x,
-          y: a.percentage ? np.y / ch * 100 : np.y,
-          rotation: (a.rotation ?? 0) + deltaRad,
-        };
+        if (a.type === "paint") {
+          const ax = snap.cx + snap.x - centroidX, ay = snap.cy + snap.y - centroidY;
+          return { ...a,
+            x: ax * cos - ay * sin + centroidX - snap.cx,
+            y: ax * sin + ay * cos + centroidY - snap.cy,
+            rotation: snap.rotation + totalRad };
+        }
+        if (a.type === "rect" || a.type === "ellipse") {
+          const ah = snap._anchor_h, av = snap._anchor_v;
+          const hw = (snap.w || 10) / 2, hh = (snap.h || 10) / 2;
+          const xOff = ah === "left" ? hw : ah === "right" ? -hw : 0;
+          const yOff = av === "top" ? hh : av === "bottom" ? -hh : 0;
+          const np = _rotPt(snap.x + xOff, snap.y + yOff);
+          const nx = np.x - xOff, ny = np.y - yOff;
+          if (snap._was_percentage) return { ...a, x: nx / cw * 100, y: ny / ch * 100, rotation: snap.rotation + totalRad };
+          return { ...a, x: nx, y: ny, rotation: snap.rotation + totalRad };
+        }
+        // text: orbit anchor point, update rotation
+        const xPx = snap._was_percentage ? snap.x / 100 * cw : snap.x;
+        const yPx = snap._was_percentage ? snap.y / 100 * ch : snap.y;
+        const np = _rotPt(xPx, yPx);
+        if (snap._was_percentage) return { ...a, rotation: snap.rotation + totalRad, x: np.x / cw * 100, y: np.y / ch * 100 };
+        return { ...a, rotation: snap.rotation + totalRad, x: np.x, y: np.y };
       }, doEmit);
     });
+
+    // ── Align to Canvas ───────────────────────────────────────────────────────
+    mkDivider(popup);
+    const groupIds = new Set(groupAnns.map((a) => a.id));
+    _buildAlignGrid(popup, cw0, ch0,
+      () => {
+        if (!getAnnotationBounds) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const a of effectiveAnnotations()) {
+          if (!groupIds.has(a.id)) continue;
+          const b = getAnnotationBounds(a);
+          if (!b) continue;
+          minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+          maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+        }
+        return minX === Infinity ? null : { minX, minY, maxX, maxY };
+      },
+      (dx, dy) => {
+        _applyGroupFn((a, cv) => {
+          const cw = cv.canvas_width  || DEFAULT_CANVAS_WIDTH;
+          const ch = cv.canvas_height || DEFAULT_CANVAS_HEIGHT;
+          return _translateAnn(a, a.percentage ? dx / cw * 100 : dx, a.percentage ? dy / ch * 100 : dy);
+        }, true);
+      },
+    );
   }
 
   // ── public API ───────────────────────────────────────────────────────────────

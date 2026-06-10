@@ -2409,11 +2409,13 @@ export default function AnnotateImageSimple(container, props) {
     applySingleUpdate: _applySingleUpdate,
     applyAnnotationMap: _applyAnnotationMap,
     effectiveAnnotations: _effectiveAnnotations,
+    getAnnotationBounds: _getAnnotationBounds,
     autoResizeTextarea: _autoResizeTextarea,
     renderCanvas,
     emit: _emit,
     rebuild: () => rebuildSettings(),
     rebuildTxFrame: () => _buildTxFrame(),
+    forceRebuildTxFrame: () => { txFrame = null; _buildTxFrame(); },
   });
   buildToolSettings = _settingsMod.buildToolSettings;
   buildAnnotationSettings = _settingsMod.buildAnnotationSettings;

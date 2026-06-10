@@ -18,15 +18,18 @@ export function createSettings(settingsArea, {
   applySingleUpdate,
   applyAnnotationMap,
   effectiveAnnotations,
+  getAnnotationBounds,
   autoResizeTextarea,
   renderCanvas,
   emit,
   rebuild,
   rebuildTxFrame,
+  forceRebuildTxFrame,
 }) {
   const deps = {
     addTooltip, getState, setCurrentValue, applySingleUpdate, applyAnnotationMap,
-    effectiveAnnotations, autoResizeTextarea, renderCanvas, emit, rebuild, rebuildTxFrame,
+    effectiveAnnotations, getAnnotationBounds, autoResizeTextarea, renderCanvas, emit, rebuild,
+    rebuildTxFrame, forceRebuildTxFrame,
   };
 
   const positionPopup = createPositionPopup(settingsArea, deps);
@@ -184,11 +187,7 @@ export function createSettings(settingsArea, {
       .filter((a) => selIds.includes(a.id) && !seen.has(a.id) && seen.add(a.id));
     const groupId = allAnns[0]?.group_id;
     const isSingleGroup = !!groupId && allAnns.every((a) => a.group_id === groupId);
-    if (isSingleGroup) {
-      positionPopup.build({ type: "group", id: groupId, groupAnns: allAnns });
-    } else {
-      positionPopup.build(null);
-    }
+    positionPopup.build({ type: "group", id: groupId || "selection", groupAnns: allAnns });
     stylePopup.buildForMulti(selIds);
     _mkSeparator();
 
