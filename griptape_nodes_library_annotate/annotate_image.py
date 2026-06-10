@@ -541,7 +541,10 @@ class AnnotateImage(DataNode):
                 bx, by = pts[i]
                 dvx, dvy, spd = tangents[i]
                 hw_natural = math.sqrt(min_spd / spd) * w / 2
-                hw = taper_min / 2 + (hw_natural - natural_min) * (w / 2 - taper_min / 2) / taper_range
+                if taper_range < 0.001:
+                    hw = w / 2
+                else:
+                    hw = taper_min / 2 + (hw_natural - natural_min) * (w / 2 - taper_min / 2) / taper_range
                 hws.append(hw)
                 px, py = (-dvy / spd * hw, dvx / spd * hw)
                 left_pts.append((bx + px, by + py))
