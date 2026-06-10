@@ -186,7 +186,6 @@ export function createSettings(settingsArea, {
     const allAnns = effectiveAnnotations()
       .filter((a) => selIds.includes(a.id) && !seen.has(a.id) && seen.add(a.id));
     const groupId = allAnns[0]?.group_id;
-    const isSingleGroup = !!groupId && allAnns.every((a) => a.group_id === groupId);
     positionPopup.build({ type: "group", id: groupId || "selection", groupAnns: allAnns });
     stylePopup.buildForMulti(selIds);
     _mkSeparator();

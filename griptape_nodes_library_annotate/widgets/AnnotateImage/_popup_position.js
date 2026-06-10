@@ -550,8 +550,8 @@ export function createPositionPopup(settingsArea, {
     function _toPx(a) {
       if (a.type === "arrow") {
         return {
-          x: Math.min(a.x1 ?? 0, a.x2 ?? 0),
-          y: Math.min(a.y1 ?? 0, a.y2 ?? 0),
+          x: ((a.x1 ?? 0) + (a.x2 ?? 0)) / 2,
+          y: ((a.y1 ?? 0) + (a.y2 ?? 0)) / 2,
         };
       }
       return {
