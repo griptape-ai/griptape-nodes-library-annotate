@@ -732,7 +732,9 @@ export default function AnnotateImageSimple(container, props) {
         currentArrow.x1, currentArrow.y1, currentArrow.x2, currentArrow.y2,
         ts.color || DEFAULT_COLOR, ts.width || DEFAULT_ARROW_WIDTH, ts.arrow_size ?? DEFAULT_ARROW_SIZE,
         null, null, null, null,
-        ts.has_start_arrow ?? false, ts.has_end_arrow ?? true, ts.taper ?? false
+        ts.start_arrow_shape ?? (ts.has_start_arrow ? "triangle" : "none"),
+        ts.end_arrow_shape   ?? (ts.has_end_arrow !== false ? "triangle" : "none"),
+        ts.taper ?? false, ts.taperMin ?? 0, ts.arrow_head_width ?? null
       );
     }
 
@@ -2011,8 +2013,8 @@ export default function AnnotateImageSimple(container, props) {
           color: ts.color,
           width: ts.width,
           arrow_size: ts.arrow_size ?? DEFAULT_ARROW_SIZE,
-          has_start_arrow: ts.has_start_arrow ?? false,
-          has_end_arrow: ts.has_end_arrow ?? true,
+          start_arrow_shape: ts.start_arrow_shape ?? (ts.has_start_arrow ? "triangle" : "none"),
+          end_arrow_shape:   ts.end_arrow_shape   ?? (ts.has_end_arrow !== false ? "triangle" : "none"),
           is_bezier: ts.is_bezier ?? false,
           taper: ts.taper ?? false,
           layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,

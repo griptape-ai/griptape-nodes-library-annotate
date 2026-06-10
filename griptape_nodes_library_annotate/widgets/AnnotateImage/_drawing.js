@@ -145,34 +145,95 @@ export function createDrawing(getState) {
     ctx.restore();
   }
 
-  function drawArrowLine(x1, y1, x2, y2, color, width, arrowSize, cp1x, cp1y, cp2x, cp2y, hasStartArrow, hasEndArrow, taper) {
+  // Returns how far the line stroke should be pulled back from the endpoint tip
+  // to make room for the cap shape.
+  function _capSetback(shape, aLen, halfW) {
+    if (!shape || shape === "none" || shape === "bar") return 0;
+    if (shape === "dot")    return halfW;      // radius = halfW/2, front edge at tip
+    if (shape === "square") return halfW / 2;  // side = halfW, front face at tip
+    return aLen;  // triangle, open, diamond
+  }
+
+  // Draws a single arrowhead cap at (tipX, tipY) pointing in direction (cosA, sinA).
+  function _drawCap(ctx, tipX, tipY, cosA, sinA, aLen, halfW, shape, color, strokeW) {
+    if (!shape || shape === "none") return;
+    const px = -sinA, py = cosA;
+    ctx.fillStyle = ctx.strokeStyle = color;
+    const bx = tipX - aLen * cosA, by = tipY - aLen * sinA;
+    if (shape === "triangle") {
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(bx + halfW * px, by + halfW * py);
+      ctx.lineTo(bx - halfW * px, by - halfW * py);
+      ctx.closePath(); ctx.fill();
+    } else if (shape === "open") {
+      ctx.beginPath();
+      ctx.moveTo(bx + halfW * px, by + halfW * py);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(bx - halfW * px, by - halfW * py);
+      ctx.lineWidth = strokeW; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.stroke();
+    } else if (shape === "dot") {
+      const r = halfW / 2;
+      const cx = tipX - r * cosA, cy = tipY - r * sinA;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    } else if (shape === "bar") {
+      ctx.lineWidth = strokeW; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(tipX + halfW * px, tipY + halfW * py);
+      ctx.lineTo(tipX - halfW * px, tipY - halfW * py);
+      ctx.stroke();
+    } else if (shape === "square") {
+      const hs = halfW / 2;
+      const cx = tipX - hs * cosA, cy = tipY - hs * sinA;
+      ctx.beginPath();
+      ctx.moveTo(cx + hs * cosA + hs * px, cy + hs * sinA + hs * py);
+      ctx.lineTo(cx - hs * cosA + hs * px, cy - hs * sinA + hs * py);
+      ctx.lineTo(cx - hs * cosA - hs * px, cy - hs * sinA - hs * py);
+      ctx.lineTo(cx + hs * cosA - hs * px, cy + hs * sinA - hs * py);
+      ctx.closePath(); ctx.fill();
+    } else if (shape === "diamond") {
+      const mx = tipX - aLen / 2 * cosA, my = tipY - aLen / 2 * sinA;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(mx + halfW * px, my + halfW * py);
+      ctx.lineTo(bx, by);
+      ctx.lineTo(mx - halfW * px, my - halfW * py);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  function drawArrowLine(x1, y1, x2, y2, color, width, arrowSize, cp1x, cp1y, cp2x, cp2y, startShape, endShape, taper, taperMin = 0, arrowHeadWidth = null) {
     const { ctx } = getState();
     if (cp1x == null) cp1x = x1 + (x2 - x1) / 3;
     if (cp1y == null) cp1y = y1 + (y2 - y1) / 3;
     if (cp2x == null) cp2x = x1 + (x2 - x1) * 2 / 3;
     if (cp2y == null) cp2y = y1 + (y2 - y1) * 2 / 3;
-    if (hasEndArrow == null) hasEndArrow = true;
+    if (endShape == null) endShape = "triangle";
     const w = Math.max(1, width);
     const aLen = Math.max(5, arrowSize ?? DEFAULT_ARROW_SIZE);
-    const halfW = Math.max(w * 2, aLen * 0.4);
-    const setback = aLen;
+    const halfW = arrowHeadWidth != null ? arrowHeadWidth / 2 : Math.max(w * 2, aLen * 0.4);
 
+    const hasEnd   = endShape   && endShape   !== "none";
+    const hasStart = startShape && startShape !== "none";
     let endAngle = 0, startAngle = 0;
-    if (hasEndArrow) {
+    if (hasEnd) {
       endAngle = Math.hypot(x2 - cp2x, y2 - cp2y) < 0.1
         ? Math.atan2(y2 - y1, x2 - x1)
         : Math.atan2(y2 - cp2y, x2 - cp2x);
     }
-    if (hasStartArrow) {
+    if (hasStart) {
       startAngle = Math.hypot(cp1x - x1, cp1y - y1) < 0.1
         ? Math.atan2(y1 - y2, x1 - x2)
         : Math.atan2(y1 - cp1y, x1 - cp1x);
     }
 
-    const lx2 = hasEndArrow   ? x2 - setback * Math.cos(endAngle)   : x2;
-    const ly2 = hasEndArrow   ? y2 - setback * Math.sin(endAngle)   : y2;
-    const lx1 = hasStartArrow ? x1 - setback * Math.cos(startAngle) : x1;
-    const ly1 = hasStartArrow ? y1 - setback * Math.sin(startAngle) : y1;
+    const endSb   = _capSetback(endShape,   aLen, halfW);
+    const startSb = _capSetback(startShape, aLen, halfW);
+    const lx2 = hasEnd   ? x2 - endSb   * Math.cos(endAngle)   : x2;
+    const ly2 = hasEnd   ? y2 - endSb   * Math.sin(endAngle)   : y2;
+    const lx1 = hasStart ? x1 - startSb * Math.cos(startAngle) : x1;
+    const ly1 = hasStart ? y1 - startSb * Math.sin(startAngle) : y1;
 
     ctx.save();
     ctx.fillStyle = color;
@@ -193,21 +254,37 @@ export function createDrawing(getState) {
         spds.push(Math.max(0.001, Math.hypot(dvx, dvy)));
       }
       const minSpd = Math.min(...spds);
-      const left = [], right = [];
+      const maxSpd = Math.max(...spds);
+      // Remap the natural taper range [naturalMin, w/2] → [taperMin/2, w/2] so
+      // taperMin is the true minimum width, not just a floor on the physics formula.
+      const naturalMin = Math.sqrt(minSpd / maxSpd) * w / 2;
+      const taperRange = w / 2 - naturalMin;
+      const left = [], right = [], hws = [];
       for (let i = 0; i <= N; i++) {
         const t = i / N, mt = 1 - t;
         const spd = spds[i];
-        const hw = Math.sqrt(minSpd / spd) * w / 2;
+        const hwNatural = Math.sqrt(minSpd / spd) * w / 2;
+        const hw = taperRange < 0.001
+          ? w / 2  // straight arrow — uniform width
+          : taperMin / 2 + (hwNatural - naturalMin) * (w / 2 - taperMin / 2) / taperRange;
+        hws.push(hw);
         const dvx = 3*(mt**2*(cp1x-lx1) + 2*mt*t*(cp2x-cp1x) + t**2*(lx2-cp2x));
         const dvy = 3*(mt**2*(cp1y-ly1) + 2*mt*t*(cp2y-cp1y) + t**2*(ly2-cp2y));
         const [px, py] = spd < 0.001 ? [0, hw] : [-dvy / spd * hw, dvx / spd * hw];
         left.push([bxs[i] + px, bys[i] + py]);
         right.push([bxs[i] - px, bys[i] - py]);
       }
+      // Tangent angles at endpoints for rounded caps.
+      // Counterclockwise arc (anticlockwise=true) goes from startAngle decreasing to endAngle,
+      // which passes through the tip direction (outward) at each end.
+      const startTang = Math.atan2(bys[1] - bys[0], bxs[1] - bxs[0]);
+      const endTang   = Math.atan2(bys[N] - bys[N - 1], bxs[N] - bxs[N - 1]);
       ctx.beginPath();
       ctx.moveTo(left[0][0], left[0][1]);
       for (let i = 1; i <= N; i++) ctx.lineTo(left[i][0], left[i][1]);
-      for (let i = N; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+      ctx.arc(bxs[N], bys[N], hws[N], endTang + Math.PI / 2, endTang - Math.PI / 2, true);
+      for (let i = N - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+      ctx.arc(bxs[0], bys[0], hws[0], startTang - Math.PI / 2, startTang + Math.PI / 2, true);
       ctx.closePath();
       ctx.fill();
     } else {
@@ -220,24 +297,8 @@ export function createDrawing(getState) {
       ctx.stroke();
     }
 
-    if (hasEndArrow) {
-      const bx = x2 - aLen * Math.cos(endAngle), by = y2 - aLen * Math.sin(endAngle);
-      const px = -Math.sin(endAngle), py = Math.cos(endAngle);
-      ctx.beginPath();
-      ctx.moveTo(x2, y2);
-      ctx.lineTo(bx + halfW * px, by + halfW * py);
-      ctx.lineTo(bx - halfW * px, by - halfW * py);
-      ctx.closePath(); ctx.fill();
-    }
-    if (hasStartArrow) {
-      const bx = x1 - aLen * Math.cos(startAngle), by = y1 - aLen * Math.sin(startAngle);
-      const px = -Math.sin(startAngle), py = Math.cos(startAngle);
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(bx + halfW * px, by + halfW * py);
-      ctx.lineTo(bx - halfW * px, by - halfW * py);
-      ctx.closePath(); ctx.fill();
-    }
+    if (hasEnd)   _drawCap(ctx, x2, y2, Math.cos(endAngle),   Math.sin(endAngle),   aLen, halfW, endShape,   color, w);
+    if (hasStart) _drawCap(ctx, x1, y1, Math.cos(startAngle), Math.sin(startAngle), aLen, halfW, startShape, color, w);
     ctx.restore();
   }
 
@@ -250,9 +311,12 @@ export function createDrawing(getState) {
     const cp2x = isBezier ? cps.cp2x : null;
     const cp2y = isBezier ? cps.cp2y : null;
     if (!ann.color) return;
+    const startShape = ann.start_arrow_shape ?? (ann.has_start_arrow ? "triangle" : "none");
+    const endShape   = ann.end_arrow_shape   ?? (ann.has_end_arrow !== false ? "triangle" : "none");
     drawArrowLine(ann.x1, ann.y1, ann.x2, ann.y2, ann.color, ann.width || DEFAULT_ARROW_WIDTH,
       ann.arrow_size ?? DEFAULT_ARROW_SIZE,
-      cp1x, cp1y, cp2x, cp2y, ann.has_start_arrow ?? false, ann.has_end_arrow ?? true, ann.taper ?? false);
+      cp1x, cp1y, cp2x, cp2y, startShape, endShape,
+      ann.taper ?? false, ann.taperMin ?? 0, ann.arrow_head_width ?? null);
     if (selected) {
       const r = HANDLE_RADIUS / displayScale;
       ctx.save();

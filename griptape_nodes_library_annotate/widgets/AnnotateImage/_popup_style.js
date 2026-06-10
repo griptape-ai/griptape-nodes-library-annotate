@@ -15,6 +15,7 @@ import {
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
   DEFAULT_ARROW_SIZE, MIN_ARROW_SIZE, MAX_ARROW_SIZE,
+  DEFAULT_ARROW_HEAD_WIDTH, MIN_ARROW_HEAD_WIDTH, MAX_ARROW_HEAD_WIDTH,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
 } from './_styles.js';
 
@@ -59,33 +60,121 @@ export function createStylePopup(settingsArea, {
     container.appendChild(row);
   }
 
-  // Adds arrow-specific toggle buttons (start/end arrowhead, bezier, taper) to container.
-  function _mkArrowToggles(container, source, onToggle) {
-    const makeBtn = (content, title, active, onClick) => {
+  // Bezier + taper icon toggles — shown under STYLE.
+  // taperMinOpts: { value, min, max, step, onChange } — when provided and source.taper is true,
+  // a compact scrubby "Min" field is appended inline after the taper button.
+  function _mkArrowToggles(container, source, onToggle, taperMinOpts = null) {
+    const makeIconBtn = (content, title, active, onClick) => {
       const btn = document.createElement("button");
       btn.className = "ais-toggle-btn" + (active ? " active" : "");
       addTooltip(btn, title);
-      btn.style.cssText = "font-size:14px;font-weight:bold;width:26px;height:26px;line-height:1;";
-      if (typeof content === "string") btn.textContent = content;
-      else btn.appendChild(content);
+      btn.style.cssText = "width:26px;height:26px;";
+      btn.appendChild(content);
       btn.addEventListener("pointerdown", (e) => { e.stopPropagation(); onClick(); });
       return btn;
     };
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:2px;";
-    row.appendChild(makeBtn("←", "Start arrowhead", source.has_start_arrow ?? false, () => {
-      onToggle({ has_start_arrow: !(source.has_start_arrow ?? false) });
-    }));
-    row.appendChild(makeBtn("→", "End arrowhead", source.has_end_arrow ?? true, () => {
-      onToggle({ has_end_arrow: !(source.has_end_arrow ?? true) });
-    }));
-    row.appendChild(makeBtn(mkIcon("bezier", 14), "Bezier curve", source.is_bezier ?? false, () => {
-      onToggle({ is_bezier: !(source.is_bezier ?? false) });
-    }));
-    row.appendChild(makeBtn(mkIcon("taper", 14), "Taper stroke width", source.taper ?? false, () => {
-      onToggle({ taper: !(source.taper ?? false) });
-    }));
+    row.appendChild(makeIconBtn(mkIcon("bezier", 14), "Bezier curve",       source.is_bezier ?? false, () => onToggle({ is_bezier: !(source.is_bezier ?? false) })));
+    row.appendChild(makeIconBtn(mkIcon("taper",  14), "Taper stroke width", source.taper     ?? false, () => onToggle({ taper:     !(source.taper     ?? false) })));
+    if (source.taper && taperMinOpts) {
+      const sep = document.createElement("div");
+      sep.style.cssText = "width:1px;height:18px;background:var(--border);margin:0 4px;flex-shrink:0;";
+      row.appendChild(sep);
+      const lbl = document.createElement("span");
+      lbl.style.cssText = "font-size:11px;color:var(--muted-foreground);cursor:ew-resize;user-select:none;touch-action:none;flex-shrink:0;";
+      lbl.textContent = "Min";
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.value = Math.round((taperMinOpts.value ?? 0) * 10) / 10;
+      if (taperMinOpts.min !== undefined) inp.min = taperMinOpts.min;
+      if (taperMinOpts.max !== undefined) inp.max = taperMinOpts.max;
+      inp.step = taperMinOpts.step ?? 1;
+      inp.style.cssText = [
+        "width:52px", "min-width:0",
+        "background:var(--input,#2a2a2a)",
+        "border:1px solid var(--border,#444)", "border-radius:4px",
+        "color:var(--foreground,#eee)", "font-size:12px", "font-family:monospace",
+        "padding:3px 6px", "height:28px", "box-sizing:border-box", "outline:none",
+        "appearance:textfield", "-moz-appearance:textfield",
+        "caret-color:var(--foreground,#eee)", "margin-left:4px",
+      ].join(";");
+      let dragging = false, startCX = 0, startVal = 0, lastVal = 0;
+      const _step = taperMinOpts.step ?? 1;
+      const _clamp = (v) => {
+        if (taperMinOpts.min !== undefined) v = Math.max(taperMinOpts.min, v);
+        if (taperMinOpts.max !== undefined) v = Math.min(taperMinOpts.max, v);
+        return v;
+      };
+      lbl.addEventListener("pointerdown", (e) => {
+        e.stopPropagation(); e.preventDefault();
+        lbl.setPointerCapture(e.pointerId);
+        dragging = true; startCX = e.clientX; startVal = Number(inp.value); lastVal = startVal;
+      });
+      lbl.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        lastVal = _clamp(startVal + (e.clientX - startCX) * _step);
+        inp.value = Math.round(lastVal * 10) / 10;
+        taperMinOpts.onChange?.(lastVal, false);
+      });
+      lbl.addEventListener("pointerup", (e) => {
+        if (!dragging) return;
+        dragging = false; lbl.releasePointerCapture(e.pointerId);
+        taperMinOpts.onChange?.(lastVal, true);
+      });
+      inp.addEventListener("input",   () => taperMinOpts.onChange?.(Number(inp.value), false));
+      inp.addEventListener("change",  () => taperMinOpts.onChange?.(Number(inp.value), true));
+      inp.addEventListener("keydown", (e) => e.stopPropagation());
+      inp.addEventListener("focus",   () => inp.select());
+      row.appendChild(lbl);
+      row.appendChild(inp);
+    }
     container.appendChild(row);
+  }
+
+  // Per-end cap shape selectors — shown under HEAD.
+  function _mkArrowShapeRows(container, source, onToggle) {
+    const END_SHAPES = [
+      { value: "none",     icon: "—",  title: "No cap"           },
+      { value: "triangle", icon: "▶",  title: "Filled triangle"  },
+      { value: "open",     icon: "▷",  title: "Open triangle"    },
+      { value: "dot",      icon: "●",  title: "Dot"              },
+      { value: "bar",      icon: "|",  title: "Bar"              },
+      { value: "square",   icon: "■",  title: "Square"           },
+      { value: "diamond",  icon: "◆",  title: "Diamond"          },
+    ];
+    const START_SHAPES = [
+      { value: "none",     icon: "—",  title: "No cap"           },
+      { value: "triangle", icon: "◀",  title: "Filled triangle"  },
+      { value: "open",     icon: "◁",  title: "Open triangle"    },
+      { value: "dot",      icon: "●",  title: "Dot"              },
+      { value: "bar",      icon: "|",  title: "Bar"              },
+      { value: "square",   icon: "■",  title: "Square"           },
+      { value: "diamond",  icon: "◆",  title: "Diamond"          },
+    ];
+    const currentEnd   = source.end_arrow_shape   ?? (source.has_end_arrow   !== false ? "triangle" : "none");
+    const currentStart = source.start_arrow_shape ?? (source.has_start_arrow             ? "triangle" : "none");
+    const mkRow = (label, shapes, current, field) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:2px;";
+      const lbl = document.createElement("span");
+      lbl.className = "ais-setting-label";
+      lbl.style.cssText = "min-width:34px;flex-shrink:0;";
+      lbl.textContent = label;
+      row.appendChild(lbl);
+      for (const s of shapes) {
+        const btn = document.createElement("button");
+        btn.className = "ais-toggle-btn" + (current === s.value ? " active" : "");
+        addTooltip(btn, s.title);
+        btn.style.cssText = "font-size:12px;width:22px;height:22px;line-height:1;";
+        btn.textContent = s.icon;
+        btn.addEventListener("pointerdown", (e) => { e.stopPropagation(); onToggle({ [field]: s.value }); });
+        row.appendChild(btn);
+      }
+      container.appendChild(row);
+    };
+    mkRow("End",   END_SHAPES,   currentEnd,   "end_arrow_shape");
+    mkRow("Start", START_SHAPES, currentStart, "start_arrow_shape");
   }
 
   // ── tool-mode content builders ───────────────────────────────────────────────
@@ -176,18 +265,12 @@ export function createStylePopup(settingsArea, {
   }
 
   function _buildArrowToolContent(popup, ts) {
+    const currentWidth = ts.width ?? DEFAULT_ARROW_WIDTH;
     mkSectionLabel(popup, "Stroke");
-    mkScrubNumRow(popup, "Width", ts.width ?? DEFAULT_ARROW_WIDTH,
+    mkScrubNumRow(popup, "Width", currentWidth,
       { min: MIN_ARROW_WIDTH, max: MAX_ARROW_WIDTH, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
         s.toolSettings.arrow.width = sz;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas(); if (doEmit) emit();
-      } });
-    mkScrubNumRow(popup, "Head size", ts.arrow_size ?? DEFAULT_ARROW_SIZE,
-      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
-        const s = getState();
-        s.toolSettings.arrow.arrow_size = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
       } });
@@ -197,8 +280,39 @@ export function createStylePopup(settingsArea, {
       const s = getState();
       s.toolSettings.arrow = { ...s.toolSettings.arrow, ...changes };
       setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-      rebuild(); renderCanvas(); emit();
+      renderCanvas(); emit();
+      popup.innerHTML = "";
+      _buildArrowToolContent(popup, getState().toolSettings.arrow);
+    }, { value: ts.taperMin ?? 0, min: 0, max: Math.max(1, currentWidth - 1), step: 1, onChange: (sz, doEmit) => {
+      const s = getState();
+      s.toolSettings.arrow.taperMin = sz;
+      setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+      renderCanvas(); if (doEmit) emit();
+    } });
+    mkDivider(popup);
+    mkSectionLabel(popup, "Head");
+    _mkArrowShapeRows(popup, ts, (changes) => {
+      const s = getState();
+      s.toolSettings.arrow = { ...s.toolSettings.arrow, ...changes };
+      setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+      renderCanvas(); emit();
+      popup.innerHTML = "";
+      _buildArrowToolContent(popup, getState().toolSettings.arrow);
     });
+    mkScrubNumRow(popup, "Length", ts.arrow_size ?? DEFAULT_ARROW_SIZE,
+      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
+        const s = getState();
+        s.toolSettings.arrow.arrow_size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
+    mkScrubNumRow(popup, "Width", ts.arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH,
+      { min: MIN_ARROW_HEAD_WIDTH, max: MAX_ARROW_HEAD_WIDTH, step: 1, onChange: (sz, doEmit) => {
+        const s = getState();
+        s.toolSettings.arrow.arrow_head_width = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
   }
 
   function _buildShapeToolContent(popup, ts, activeTool) {
@@ -255,20 +369,14 @@ export function createStylePopup(settingsArea, {
   }
 
   function _buildArrowAnnContent(popup, ann) {
+    const currentWidth = ann.width ?? DEFAULT_ARROW_WIDTH;
+    const effectiveHeadWidth = ann.arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH;
     mkSectionLabel(popup, "Stroke");
-    mkScrubNumRow(popup, "Width", ann.width ?? DEFAULT_ARROW_WIDTH,
+    mkScrubNumRow(popup, "Width", currentWidth,
       { min: MIN_ARROW_WIDTH, max: MAX_ARROW_WIDTH, step: 1, onChange: (sz, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, width: sz }));
         const s = getState();
         s.toolSettings.arrow.width = sz;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas(); if (doEmit) emit();
-      } });
-    mkScrubNumRow(popup, "Head size", ann.arrow_size ?? DEFAULT_ARROW_SIZE,
-      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
-        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_size: sz }));
-        const s = getState();
-        s.toolSettings.arrow.arrow_size = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
       } });
@@ -279,8 +387,45 @@ export function createStylePopup(settingsArea, {
       const s = getState();
       s.toolSettings.arrow = { ...s.toolSettings.arrow, ...changes };
       setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-      rebuild(); renderCanvas(); emit();
+      renderCanvas(); emit();
+      const fresh = effectiveAnnotations().find((a) => a.id === ann.id) ?? { ...ann, ...changes };
+      popup.innerHTML = "";
+      _buildArrowAnnContent(popup, fresh);
+    }, { value: ann.taperMin ?? 0, min: 0, max: Math.max(1, currentWidth - 1), step: 1, onChange: (sz, doEmit) => {
+      applySingleUpdate(ann.id, (a) => ({ ...a, taperMin: sz }));
+      const s = getState();
+      s.toolSettings.arrow.taperMin = sz;
+      setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+      renderCanvas(); if (doEmit) emit();
+    } });
+    mkDivider(popup);
+    mkSectionLabel(popup, "Head");
+    _mkArrowShapeRows(popup, ann, (changes) => {
+      applySingleUpdate(ann.id, (a) => ({ ...a, ...changes }));
+      const s = getState();
+      s.toolSettings.arrow = { ...s.toolSettings.arrow, ...changes };
+      setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+      renderCanvas(); emit();
+      const fresh = effectiveAnnotations().find((a) => a.id === ann.id) ?? { ...ann, ...changes };
+      popup.innerHTML = "";
+      _buildArrowAnnContent(popup, fresh);
     });
+    mkScrubNumRow(popup, "Length", ann.arrow_size ?? DEFAULT_ARROW_SIZE,
+      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_size: sz }));
+        const s = getState();
+        s.toolSettings.arrow.arrow_size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
+    mkScrubNumRow(popup, "Width", effectiveHeadWidth,
+      { min: MIN_ARROW_HEAD_WIDTH, max: MAX_ARROW_HEAD_WIDTH, step: 1, onChange: (sz, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_head_width: sz }));
+        const s = getState();
+        s.toolSettings.arrow.arrow_head_width = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
   }
 
   function _buildShapeAnnContent(popup, ann) {
@@ -331,10 +476,19 @@ export function createStylePopup(settingsArea, {
     if (arrowAnns.length > 0) {
       mkDivider(popup);
       mkSectionLabel(popup, "Arrow Head");
-      mkScrubNumRow(popup, "Head size", arrowAnns[0].arrow_size ?? DEFAULT_ARROW_SIZE,
+      mkScrubNumRow(popup, "Length", arrowAnns[0].arrow_size ?? DEFAULT_ARROW_SIZE,
         { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
           const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
             if (a.type === "arrow") return { ...a, arrow_size: sz };
+            return a;
+          });
+          setCurrentValue({ ...getState().currentValue, annotations, overrides });
+          renderCanvas(); if (doEmit) emit();
+        } });
+      mkScrubNumRow(popup, "Width", arrowAnns[0].arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH,
+        { min: MIN_ARROW_HEAD_WIDTH, max: MAX_ARROW_HEAD_WIDTH, step: 1, onChange: (sz, doEmit) => {
+          const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
+            if (a.type === "arrow") return { ...a, arrow_head_width: sz };
             return a;
           });
           setCurrentValue({ ...getState().currentValue, annotations, overrides });
