@@ -154,7 +154,7 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
   // Left section: tool / annotation settings — content managed by _settings.js
   const settingsArea = document.createElement("div");
   settingsArea.style.cssText =
-    "display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow:visible;padding:2px 0;";
+    "display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow:visible;";
   headerBar.appendChild(settingsArea);
 
   // Right section (inner-left): object actions (group, layers, delete, reset)
