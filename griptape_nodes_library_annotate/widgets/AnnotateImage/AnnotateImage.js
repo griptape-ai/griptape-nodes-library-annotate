@@ -271,7 +271,7 @@ export default function AnnotateImageSimple(container, props) {
   // Returns the annotation unchanged for other types or when percentage mode is off.
   function _resolveAnn(ann) {
     if (!ann.percentage) return ann;
-    if (ann.type !== "text" && ann.type !== "rect" && ann.type !== "ellipse") return ann;
+    if (ann.type !== "text" && ann.type !== "rect" && ann.type !== "ellipse" && ann.type !== "stamp") return ann;
     const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
     const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
     return { ...ann, x: (ann.x ?? 0) * cw / 100, y: (ann.y ?? 0) * ch / 100 };
@@ -338,7 +338,7 @@ export default function AnnotateImageSimple(container, props) {
   // Creates the origPositions entry for a translate drag.
   // Percentage annotations: store pixel coords so delta math works; mark with percentage flag.
   function _makeOrigPos(a) {
-    if (a.percentage && (a.type === "text" || a.type === "rect" || a.type === "ellipse")) {
+    if (a.percentage && (a.type === "text" || a.type === "rect" || a.type === "ellipse" || a.type === "stamp")) {
       const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
       const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
       return { x: (a.x ?? 0) * cw / 100, y: (a.y ?? 0) * ch / 100, percentage: true };
@@ -961,8 +961,9 @@ export default function AnnotateImageSimple(container, props) {
       const pad = (a.width || 2) / 2 + 4;
       return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
     } else if (ann.type === "stamp") {
-      const r = (ann.size || DEFAULT_STAMP_SIZE) / 2 + 4;
-      return { minX: (ann.x || 0) - r, minY: (ann.y || 0) - r, maxX: (ann.x || 0) + r, maxY: (ann.y || 0) + r };
+      const ra = _resolveAnn(ann);
+      const r = (ra.size || DEFAULT_STAMP_SIZE) / 2 + 4;
+      return { minX: (ra.x || 0) - r, minY: (ra.y || 0) - r, maxX: (ra.x || 0) + r, maxY: (ra.y || 0) + r };
     }
     return null;
   }
@@ -1014,10 +1015,11 @@ export default function AnnotateImageSimple(container, props) {
         return;
       }
       if (ann.type === "stamp") {
-        const r = (ann.size || DEFAULT_STAMP_SIZE) / 2;
+        const ra = _resolveAnn(ann);
+        const r = (ra.size || DEFAULT_STAMP_SIZE) / 2;
         txFrame = {
-          pivotX: ann.x || 0, pivotY: ann.y || 0,
-          rotation: ann.rotation || 0,
+          pivotX: ra.x || 0, pivotY: ra.y || 0,
+          rotation: ra.rotation || 0,
           halfW: r + pad, halfH: r + pad,
           _selIds: [...selIds],
         };
@@ -1891,10 +1893,13 @@ export default function AnnotateImageSimple(container, props) {
               cp2x: dc2x*cos - dc2y*sin + pivot.x, cp2y: dc2x*sin + dc2y*cos + pivot.y };
           } else if (a.type === "stamp") {
             const dx = snap.x - pivot.x, dy = snap.y - pivot.y;
-            return { ...a,
-              x: dx*cos - dy*sin + pivot.x,
-              y: dx*sin + dy*cos + pivot.y,
-              rotation: snap.rotation + dAngle };
+            const nx = dx*cos - dy*sin + pivot.x, ny = dx*sin + dy*cos + pivot.y;
+            if (snap._was_percentage) {
+              const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+              const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+              return { ...a, x: nx / cw * 100, y: ny / ch * 100, rotation: snap.rotation + dAngle };
+            }
+            return { ...a, x: nx, y: ny, rotation: snap.rotation + dAngle };
           }
           return a;
         });
@@ -1985,6 +1990,11 @@ export default function AnnotateImageSimple(container, props) {
           } else if (a.type === "stamp") {
             const [ncx, ncy] = scaleAnchor(snap.x, snap.y);
             const ratio = Math.sqrt(ratioX * ratioY);
+            if (snap._was_percentage) {
+              const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+              const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+              return { ...a, x: ncx / cw * 100, y: ncy / ch * 100, size: Math.max(MIN_STAMP_SIZE, snap.size * ratio) };
+            }
             return { ...a, x: ncx, y: ncy, size: Math.max(MIN_STAMP_SIZE, snap.size * ratio) };
           }
           return a;

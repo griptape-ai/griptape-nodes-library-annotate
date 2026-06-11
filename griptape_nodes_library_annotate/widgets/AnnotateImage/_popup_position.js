@@ -531,9 +531,16 @@ export function createPositionPopup(settingsArea, {
     const { currentValue } = getState();
     const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
     const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+    _buildPxPctToggle(popup, ann, dismiss, (p, d) => {
+      const fresh = effectiveAnnotations().find((a) => a.id === ann.id) ?? ann;
+      _buildStampContent(p, fresh, d);
+    });
+    mkDivider(popup);
     mkSectionLabel(popup, "Position");
-    mkXYPad(popup, Math.round(ann.x ?? 0), Math.round(ann.y ?? 0), {
-      unit: "px", step: 1,
+    const unit = ann.percentage ? "%" : "px";
+    const step = ann.percentage ? 0.1 : 1;
+    mkXYPad(popup, ann.x ?? 0, ann.y ?? 0, {
+      unit, step,
       onXY: (nx, ny, doEmit) => {
         applySingleUpdate(ann.id, (a) => ({ ...a, x: nx, y: ny }));
         rebuildTxFrame(); renderCanvas(); if (doEmit) emit();

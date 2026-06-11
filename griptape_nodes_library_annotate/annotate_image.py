@@ -649,8 +649,10 @@ class AnnotateImage(DataNode):
 
     def _draw_stamp(self, overlay: "Image.Image", ann: dict) -> None:
         sz = float(ann.get("size", 80))
-        cx = float(ann.get("x", 0))
-        cy = float(ann.get("y", 0))
+        canvas_w, canvas_h = overlay.size
+        is_pct = bool(ann.get("percentage", False))
+        cx = self._resolve_px(float(ann.get("x", 0)), canvas_w, is_pct)
+        cy = self._resolve_px(float(ann.get("y", 0)), canvas_h, is_pct)
         rotation = float(ann.get("rotation", 0))
         color_str = ann.get("color", "") or ""
         disc_color = self._parse_color(color_str) if color_str else (255, 0, 0, 255)
