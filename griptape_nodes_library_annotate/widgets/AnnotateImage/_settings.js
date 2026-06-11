@@ -77,7 +77,7 @@ export function createSettings(settingsArea, {
       });
     } else {
       _mkColorSwatch(ts.color ?? DEFAULT_COLOR, "Color",
-        isShape || activeTool === "arrow" ? "No outline" : null, false,
+        isShape || activeTool === "arrow" || activeTool === "stamp" ? "No outline" : null, false,
         (col, doEmit) => {
           const s = getState();
           s.toolSettings[activeTool].color = col;
@@ -136,7 +136,7 @@ export function createSettings(settingsArea, {
       ? ((ann.strokes && ann.strokes[0]) ? ann.strokes[0].color : DEFAULT_COLOR)
       : (ann.color ?? DEFAULT_COLOR);
 
-    _mkColorSwatch(color, "Color", isShape || ann.type === "arrow" ? "No outline" : null, false,
+    _mkColorSwatch(color, "Color", isShape || ann.type === "arrow" || ann.type === "stamp" ? "No outline" : null, false,
       (col, doEmit) => {
         applySingleUpdate(ann.id, (a) => {
           if (a.type === "paint") return { ...a, strokes: (a.strokes || []).map((s) => ({ ...s, color: col || DEFAULT_COLOR })) };
@@ -146,6 +146,7 @@ export function createSettings(settingsArea, {
         if (ann.type === "arrow") { s.toolSettings.arrow.color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
         if (ann.type === "text")  { s.toolSettings.text.color  = col || DEFAULT_COLOR; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
         if (ann.type === "paint") { s.toolSettings.paint.color = col || DEFAULT_COLOR; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
+        if (ann.type === "stamp") { s.toolSettings.stamp.color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
         if (isShape) { s.toolSettings[ann.type].color = col; setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } }); }
         const s2 = getState();
         if (s2.textInput && s2.textEditId === ann.id) {

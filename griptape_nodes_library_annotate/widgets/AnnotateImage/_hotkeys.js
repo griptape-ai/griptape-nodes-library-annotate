@@ -3,6 +3,7 @@ import {
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
+  DEFAULT_STAMP_SIZE, MIN_STAMP_SIZE, MAX_STAMP_SIZE,
 } from './_styles.js';
 
 // Keyboard shortcut handling for the annotation widget.
@@ -19,7 +20,7 @@ import {
 //   applySingleUpdate(id, fn), effectiveAnnotations(), onPointerDown(e),
 //   commitTextEdit(), wrapper (DOM element for shift-click containment check
 
-const TOOL_HOTKEYS = { v: "select", h: "hand", z: "zoom", d: "paint", t: "text", l: "arrow", r: "rect", o: "ellipse" };
+const TOOL_HOTKEYS = { v: "select", h: "hand", z: "zoom", d: "paint", t: "text", l: "arrow", r: "rect", o: "ellipse", m: "stamp" };
 
 export function setupHotkeys(getState, actions) {
   const {
@@ -57,7 +58,7 @@ export function setupHotkeys(getState, actions) {
     e.preventDefault();
     if (textEditId) return;
     if (!(currentValue.selected_ids || []).length) return;
-    if (activeTool !== "select" && activeTool !== "arrow" && activeTool !== "rect" && activeTool !== "ellipse") return;
+    if (activeTool !== "select" && activeTool !== "arrow" && activeTool !== "rect" && activeTool !== "ellipse" && activeTool !== "stamp") return;
     deleteAnnotations(currentValue.selected_ids);
     setCurrentValue({ ...getState().currentValue, selected_ids: [] });
     setTxFrame(null);
@@ -108,6 +109,11 @@ export function setupHotkeys(getState, actions) {
           applySingleUpdate(selAnn.id, (a) => ({ ...a, width: next }));
           emit(); rebuildSettings(); renderCanvas(); return;
         }
+        if (selAnn.type === "stamp") {
+          const next = Math.max(MIN_STAMP_SIZE, Math.min(MAX_STAMP_SIZE, (selAnn.size ?? DEFAULT_STAMP_SIZE) + delta * 5));
+          applySingleUpdate(selAnn.id, (a) => ({ ...a, size: next }));
+          emit(); rebuildSettings(); renderCanvas(); return;
+        }
       }
     }
     // Adjust active tool settings
@@ -125,6 +131,10 @@ export function setupHotkeys(getState, actions) {
       rebuildSettings(); emit();
     } else if (activeTool === "rect" || activeTool === "ellipse") {
       toolSettings[activeTool].width = Math.max(MIN_SHAPE_WIDTH, Math.min(MAX_SHAPE_WIDTH, (toolSettings[activeTool].width ?? DEFAULT_SHAPE_WIDTH) + delta));
+      setCurrentValue({ ...currentValue, tool_settings: { ...toolSettings } });
+      rebuildSettings(); emit();
+    } else if (activeTool === "stamp") {
+      toolSettings.stamp.size = Math.max(MIN_STAMP_SIZE, Math.min(MAX_STAMP_SIZE, (toolSettings.stamp.size ?? DEFAULT_STAMP_SIZE) + delta * 5));
       setCurrentValue({ ...currentValue, tool_settings: { ...toolSettings } });
       rebuildSettings(); emit();
     }

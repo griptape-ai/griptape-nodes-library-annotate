@@ -91,6 +91,9 @@ export function snapshotAnn(ann) {
     width: ann.width ?? 3,
     sizeScale: ann.sizeScale ?? 1,
     w: ann.w ?? 100, h: ann.h ?? 100,
+    size: ann.size ?? 80,
+    stamp_type: ann.stamp_type || "",
+    shape: ann.shape || "",
   };
 }
 

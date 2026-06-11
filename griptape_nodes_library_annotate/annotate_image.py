@@ -592,6 +592,7 @@ class AnnotateImage(DataNode):
         w = float(ann.get("w", 100))
         h = float(ann.get("h", 100))
         rotation = float(ann.get("rotation", 0))
+        shape = ann.get("shape", "plain") or "plain"
         color_str = ann.get("color", "") or ""
         color = self._parse_color(color_str) if color_str else None
         width = max(1, int(ann.get("width", 2))) if color_str else 0
@@ -603,12 +604,28 @@ class AnnotateImage(DataNode):
         av = ann.get("anchor_v", "middle")
         cx = x + (hw if ah == "left" else -hw if ah == "right" else 0)
         cy = y + (hh if av == "top" else -hh if av == "bottom" else 0)
-        cos_r, sin_r = math.cos(rotation), math.sin(rotation)
-        corners = [
-            (cx + lx * cos_r - ly * sin_r, cy + lx * sin_r + ly * cos_r)
-            for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
-        ]
-        draw.polygon(corners, fill=fill, outline=color, width=width)
+        if shape in ("rounded", "pill"):
+            r = min(hw, hh) if shape == "pill" else min(hw, hh) * 0.3
+            pad = width + 4
+            tmp_w = int(w + pad * 2 + 4)
+            tmp_h = int(h + pad * 2 + 4)
+            tmp = Image.new("RGBA", (tmp_w, tmp_h), (0, 0, 0, 0))
+            tmp_draw = ImageDraw.Draw(tmp)
+            ox, oy = pad + 2, pad + 2
+            bbox = [ox, oy, ox + int(w), oy + int(h)]
+            tmp_draw.rounded_rectangle(bbox, radius=int(r), fill=fill, outline=color, width=width)
+            rot_deg = -rotation * (180.0 / math.pi)
+            rotated = tmp.rotate(rot_deg, expand=True, resample=Image.Resampling.BICUBIC)
+            paste_x = int(cx - rotated.width / 2)
+            paste_y = int(cy - rotated.height / 2)
+            draw._image.alpha_composite(rotated, dest=(paste_x, paste_y))  # type: ignore[attr-defined]
+        else:
+            cos_r, sin_r = math.cos(rotation), math.sin(rotation)
+            corners = [
+                (cx + lx * cos_r - ly * sin_r, cy + lx * sin_r + ly * cos_r)
+                for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+            ]
+            draw.polygon(corners, fill=fill, outline=color, width=width)
 
     def _draw_ellipse(self, draw: ImageDraw.ImageDraw, ann: dict, canvas_w: int = 0, canvas_h: int = 0) -> None:
         is_pct = bool(ann.get("percentage", False))
@@ -629,6 +646,152 @@ class AnnotateImage(DataNode):
         cy = y + (hh if av == "top" else -hh if av == "bottom" else 0)
         bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
         draw.ellipse(bbox, fill=fill, outline=color, width=width)
+
+    def _draw_stamp(self, overlay: "Image.Image", ann: dict) -> None:
+        sz = float(ann.get("size", 80))
+        canvas_w, canvas_h = overlay.size
+        is_pct = bool(ann.get("percentage", False))
+        cx = self._resolve_px(float(ann.get("x", 0)), canvas_w, is_pct)
+        cy = self._resolve_px(float(ann.get("y", 0)), canvas_h, is_pct)
+        rotation = float(ann.get("rotation", 0))
+        color_str = ann.get("color", "") or ""
+        disc_color = self._parse_color(color_str) if color_str else (255, 0, 0, 255)
+        stamp_type = ann.get("stamp_type", "checkmark") or "checkmark"
+
+        # Draw stamp into a temp image (sized for rotation), then composite.
+        diag = int(math.ceil(math.hypot(sz, sz))) + 8
+        tmp = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        ox, oy = diag / 2.0, diag / 2.0
+        r = sz / 2.0
+
+        # Filled disc (sticker background)
+        d.ellipse([ox - r, oy - r, ox + r, oy + r], fill=disc_color)
+
+        # White border ring
+        border_w = max(1, int(sz * 0.04))
+        d.ellipse([ox - r, oy - r, ox + r, oy + r], outline=(255, 255, 255, 255), width=border_w)
+
+        # Icon in white — drawn in a padded inner square (15% padding each side)
+        pad = sz * 0.15
+        icon_sz = sz - pad * 2  # icon fits in this square, centered
+        white = (255, 255, 255, 242)
+        sw = max(1, int(icon_sz / 24 * 2))  # scale Lucide stroke-width=2 to icon_sz
+
+        def p(lx: float, ly: float) -> tuple[float, float]:
+            # Map from [-0.5,0.5] normalized icon space to tmp image coords
+            return (ox + lx * icon_sz, oy + ly * icon_sz)
+
+        if stamp_type == "checkmark":
+            d.line([p(-0.38, 0.05), p(-0.08, 0.35), p(0.42, -0.32)], fill=white, width=sw, joint="curve")
+        elif stamp_type == "cross":
+            d.line([p(-0.32, -0.32), p(0.32, 0.32)], fill=white, width=sw)
+            d.line([p(0.32, -0.32), p(-0.32, 0.32)], fill=white, width=sw)
+        elif stamp_type == "no":
+            ri = icon_sz * 0.42
+            d.ellipse([ox - ri, oy - ri, ox + ri, oy + ri], outline=white, width=sw)
+            d.line([p(-0.28, -0.28), p(0.28, 0.28)], fill=white, width=sw)
+        elif stamp_type == "warning":
+            tri = [p(0, -0.44), p(0.42, 0.36), p(-0.42, 0.36)]
+            d.polygon(tri, outline=white, width=sw)
+            d.line([p(0, -0.12), p(0, 0.12)], fill=white, width=sw)
+            dr = max(2, int(icon_sz * 0.05))
+            px2, py2 = p(0, 0.24)
+            d.ellipse([px2 - dr, py2 - dr, px2 + dr, py2 + dr], fill=white)
+        elif stamp_type == "question":
+            ri = icon_sz * 0.42
+            d.ellipse([ox - ri, oy - ri, ox + ri, oy + ri], outline=white, width=sw)
+            arc_r = icon_sz * 0.12
+            arc_cx, arc_cy = ox, oy - icon_sz * 0.09
+            d.arc(
+                [arc_cx - arc_r, arc_cy - arc_r, arc_cx + arc_r, arc_cy + arc_r],
+                start=180,
+                end=0,
+                fill=white,
+                width=sw,
+            )
+            d.line([p(0, 0.03), p(0, 0.14)], fill=white, width=sw)
+            dr = max(2, int(icon_sz * 0.05))
+            px2, py2 = p(0, 0.24)
+            d.ellipse([px2 - dr, py2 - dr, px2 + dr, py2 + dr], fill=white)
+        elif stamp_type == "exclamation":
+            ri = icon_sz * 0.42
+            d.ellipse([ox - ri, oy - ri, ox + ri, oy + ri], outline=white, width=sw)
+            d.line([p(0, -0.22), p(0, 0.08)], fill=white, width=sw)
+            dr = max(2, int(icon_sz * 0.05))
+            px2, py2 = p(0, 0.22)
+            d.ellipse([px2 - dr, py2 - dr, px2 + dr, py2 + dr], fill=white)
+        elif stamp_type in ("thumbs-up", "thumbs-down"):
+            # Filled polygon tracing the Lucide thumbs-up outline (24×24 → normalised).
+            # sign=-1 flips vertically for thumbs-down.
+            sign = 1 if stamp_type == "thumbs-up" else -1
+
+            def pt(lx: float, ly: float) -> tuple[float, float]:
+                return (ox + lx * icon_sz, oy + sign * ly * icon_sz)
+
+            # Polygon approximated from the Lucide thumbs-up SVG path (24×24 → ±0.45).
+            poly = [
+                pt(+0.000, -0.375),  # thumb tip
+                pt(+0.090, -0.330),  # thumb right arc (mid)
+                pt(+0.112, -0.229),  # thumb base-right
+                pt(+0.075, -0.075),  # thumb/palm junction (right)
+                pt(+0.294, -0.075),  # finger knuckle step
+                pt(+0.366, +0.021),  # palm top-right corner
+                pt(+0.278, +0.321),  # palm right side
+                pt(+0.206, +0.375),  # palm bottom-right corner
+                pt(-0.300, +0.375),  # palm bottom-left corner
+                pt(-0.375, +0.300),  # palm lower-left corner
+                pt(-0.375, +0.000),  # palm left side (mid)
+                pt(-0.300, -0.075),  # palm top-left corner
+                pt(-0.197, -0.075),  # palm top
+                pt(-0.129, -0.117),  # shoulder junction
+            ]
+            # Close loop cleanly: repeat first two points so the joint at thumb tip is drawn.
+            d.line(poly + [poly[0], poly[1]], fill=white, width=sw, joint="curve")
+            # Wrist sleeve line: M7 10 v12 in Lucide space → (-0.188, -0.075) to (-0.188, 0.375)
+            d.line([pt(-0.188, -0.075), pt(-0.188, +0.375)], fill=white, width=sw)
+        elif stamp_type == "pin":
+            top_r = icon_sz * 0.28
+            top_cy = oy - icon_sz * 0.1
+            d.arc(
+                [ox - top_r, top_cy - top_r, ox + top_r, top_cy + top_r],
+                start=72,
+                end=108,
+                fill=white,
+                width=sw,
+            )
+            tip_x, tip_y = p(0, 0.44)
+            d.line(
+                [
+                    (ox + top_r * math.cos(math.radians(72)), top_cy + top_r * math.sin(math.radians(72))),
+                    (tip_x, tip_y),
+                ],
+                fill=white,
+                width=sw,
+            )
+            d.line(
+                [
+                    (ox + top_r * math.cos(math.radians(108)), top_cy + top_r * math.sin(math.radians(108))),
+                    (tip_x, tip_y),
+                ],
+                fill=white,
+                width=sw,
+            )
+            inner_r = top_r * 0.42
+            d.ellipse(
+                [ox - inner_r, top_cy - inner_r, ox + inner_r, top_cy + inner_r],
+                outline=white,
+                width=sw,
+            )
+        else:
+            ri = icon_sz * 0.38
+            d.ellipse([ox - ri, oy - ri, ox + ri, oy + ri], outline=white, width=sw)
+
+        rot_deg = -rotation * (180.0 / math.pi)
+        rotated = tmp.rotate(rot_deg, expand=True, resample=Image.Resampling.BICUBIC)
+        paste_x = int(cx - rotated.width / 2)
+        paste_y = int(cy - rotated.height / 2)
+        overlay.alpha_composite(rotated, dest=(paste_x, paste_y))
 
     def _effective_annotations(self, annotation_data: dict) -> list:
         """Return imported (with overrides applied, deleted ones skipped) + local annotations,
@@ -735,7 +898,10 @@ class AnnotateImage(DataNode):
                     self._draw_rect(ann_draw, ann, canvas_w, canvas_h)
                 elif ann_type == "ellipse":
                     self._draw_ellipse(ann_draw, ann, canvas_w, canvas_h)
-                overlay.alpha_composite(ann_temp)
+                if ann_type != "stamp":
+                    overlay.alpha_composite(ann_temp)
+            if ann_type == "stamp":
+                self._draw_stamp(overlay, ann)
 
         canvas = Image.alpha_composite(bg, overlay)
 

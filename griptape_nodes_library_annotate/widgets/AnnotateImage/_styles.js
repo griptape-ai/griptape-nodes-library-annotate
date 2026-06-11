@@ -26,6 +26,23 @@ export const DEFAULT_SHAPE_WIDTH   = 8;
 export const MIN_SHAPE_WIDTH       = 1;
 export const MAX_SHAPE_WIDTH       = 40;
 
+export const DEFAULT_STAMP_SIZE    = 80;
+export const MIN_STAMP_SIZE        = 20;
+export const MAX_STAMP_SIZE        = 400;
+
+// Default sticker colors per stamp type — applied automatically when switching stamp
+export const STAMP_PRESET_COLORS = {
+  checkmark:   "#22c55e",
+  "thumbs-up": "#22c55e",
+  cross:       "#ef4444",
+  no:          "#ef4444",
+  "thumbs-down": "#f97316",
+  warning:     "#f59e0b",
+  exclamation: "#f97316",
+  question:    "#3b82f6",
+  pin:         "#36acbe",
+};
+
 // ── Transform / selection chrome ──────────────────────────────────────────────
 
 // Primary selection color (local annotations)
@@ -97,8 +114,9 @@ export function defaultData() {
       paint:   { color: DEFAULT_COLOR, size: DEFAULT_PAINT_SIZE, pressure: false, pressureMin: 0 },
       text:    { color: DEFAULT_COLOR, font_size: DEFAULT_TEXT_SIZE, text_align: "left", bg_color: "" },
       arrow:   { color: DEFAULT_COLOR, width: DEFAULT_ARROW_WIDTH, arrow_size: DEFAULT_ARROW_SIZE, arrow_head_width: DEFAULT_ARROW_HEAD_WIDTH, start_arrow_shape: "none", end_arrow_shape: "triangle", is_bezier: false, taper: false, taperMin: 0 },
-      rect:    { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "" },
+      rect:    { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "", activeShape: "plain" },
       ellipse: { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "" },
+      stamp:   { color: STAMP_PRESET_COLORS.checkmark, activeStamp: "checkmark", size: DEFAULT_STAMP_SIZE },
     },
     selected_ids: [],
   };
@@ -131,7 +149,7 @@ export function injectStyles() {
     .ais-cp-swatch:hover { border-color:var(--foreground,#aaa); }
     .ais-popup-btn { display:flex; align-items:center; gap:5px; padding:3px 9px; height:28px; border:none; cursor:pointer; border-radius:6px; background:var(--muted); color:var(--foreground); font-size:11px; font-weight:600; font-family:inherit; flex-shrink:0; transition:background 0.15s; }
     .ais-popup-btn:hover { background:var(--accent,rgba(122,157,184,0.2)); color:var(--foreground); }
-    .ais-popup-btn.active { box-shadow:0 0 0 1.5px #7a9db8,0 0 6px 1px rgba(122,157,184,0.25); }
+    .ais-popup-btn.active { background:var(--accent,rgba(122,157,184,0.2)); }
     .ais-popup-btn.disabled { opacity:0.35; pointer-events:none; }
   `;
 }
