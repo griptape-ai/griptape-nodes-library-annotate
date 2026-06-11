@@ -707,6 +707,7 @@ export function createPositionPopup(settingsArea, {
         }
         if (a.type === "stamp") {
           const np = _rotPt(snap.x, snap.y);
+          if (snap._was_percentage) return { ...a, x: np.x / cw * 100, y: np.y / ch * 100, rotation: snap.rotation + totalRad };
           return { ...a, x: np.x, y: np.y, rotation: snap.rotation + totalRad };
         }
         // text: orbit anchor point, update rotation

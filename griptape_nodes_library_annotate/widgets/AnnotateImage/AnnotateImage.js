@@ -850,7 +850,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // ── drawing functions (bound to live state via factory) ───────────────────
   const drawing = createDrawing(() => ({ ctx, displayScale, hoverId, hoverGroupId, marqueePreviewIds }));
-  const { renderStrokes, drawPaint, drawText, drawArrowLine, drawArrowAnnotation, drawRect, drawEllipse, drawPolygon, drawStamp } = drawing;
+  const { renderStrokes, drawPaint, drawText, drawArrowLine, drawArrowAnnotation, drawRect, drawEllipse, drawStamp } = drawing;
 
   // ── hit testing ───────────────────────────────────────────────────────────
   function hitTest(cx, cy) {
@@ -1107,8 +1107,9 @@ export default function AnnotateImageSimple(container, props) {
       if (!b) return false;
       return !(b.maxX < x1 || b.minX > x2 || b.maxY < y1 || b.minY > y2);
     } else if (ann.type === "stamp") {
-      const r = (ann.size || DEFAULT_STAMP_SIZE) / 2;
-      const ax = ann.x || 0, ay = ann.y || 0;
+      const ra = _resolveAnn(ann);
+      const r = (ra.size || DEFAULT_STAMP_SIZE) / 2;
+      const ax = ra.x || 0, ay = ra.y || 0;
       return !(ax + r < x1 || ax - r > x2 || ay + r < y1 || ay - r > y2);
     }
     return false;

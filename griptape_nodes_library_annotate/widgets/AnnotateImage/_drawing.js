@@ -457,6 +457,7 @@ export function createDrawing(getState) {
         const rx = +el.getAttribute("rx") || 0;
         const bx = +el.getAttribute("x") || 0, by = +el.getAttribute("y") || 0;
         const bw = +el.getAttribute("width") || 0, bh = +el.getAttribute("height") || 0;
+        ctx.beginPath();
         if (rx) ctx.roundRect(bx, by, bw, bh, rx); else ctx.rect(bx, by, bw, bh);
         if (hasFill) ctx.fill(); else ctx.stroke();
       }
