@@ -10,6 +10,7 @@ import {
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH, DEFAULT_ARROW_SIZE,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
+  DEFAULT_STAMP_SIZE, MIN_STAMP_SIZE, STAMP_PRESET_COLORS,
   SEL_COLOR, SEL_COLOR_RGB, IMP_COLOR, IMP_COLOR_RGB,
   FRAME_FILL_OPACITY, FRAME_BORDER_OPACITY, FRAME_CORNER_OPACITY,
   FRAME_ROT_STEM_OPACITY, ROT_HANDLE_INNER_OPACITY,
@@ -56,6 +57,7 @@ export default function AnnotateImageSimple(container, props) {
     arrow:   { ...defTS.arrow,   ...(rawTS.arrow   || {}), width: (rawTS.arrow?.width === 3 ? 8 : (rawTS.arrow?.width ?? defTS.arrow.width)) },
     rect:    { ...defTS.rect,    ...(rawTS.rect    || {}) },
     ellipse: { ...defTS.ellipse, ...(rawTS.ellipse || {}) },
+    stamp:   { ...defTS.stamp,   ...(rawTS.stamp   || {}) },
   } };
   // Migrate old selected_id (single string) to selected_ids (array)
   if (rawValue.selected_id && !rawValue.selected_ids) {
@@ -84,7 +86,7 @@ export default function AnnotateImageSimple(container, props) {
 
   // unified transform frame (OBB)
   let txFrame = null; // { pivotX, pivotY, rotation, halfW, halfH }
-  const _frameActiveTools = ["select", "paint", "rect", "ellipse"];
+  const _frameActiveTools = ["select", "paint", "rect", "ellipse", "stamp"];
 
   // pointer state
   let isPointerDown = false;
@@ -93,6 +95,7 @@ export default function AnnotateImageSimple(container, props) {
   let currentArrow = null;
   let currentRect = null;
   let currentEllipse = null;
+  let currentStamp = null;
   let dragState = null;
   let lastPtTime = 0, lastPtX = 0, lastPtY = 0, velSmoothed = 0;
   let paintCursorPos = null;
@@ -324,6 +327,7 @@ export default function AnnotateImageSimple(container, props) {
       else if (ann.type === "arrow")   offDrawing.drawArrowAnnotation(ann, false);
       else if (ann.type === "rect")    offDrawing.drawRect(ann, false);
       else if (ann.type === "ellipse") offDrawing.drawEllipse(ann, false);
+      else if (ann.type === "stamp")   offDrawing.drawStamp(ann, false);
     }
 
     offCtx.restore();
@@ -394,12 +398,13 @@ export default function AnnotateImageSimple(container, props) {
 
   // ── Toolbar (sidebar + header bar) — see _toolbar.js ─────────────────────
   const { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns,
-    setActiveTool, setResetViewEnabled, updateExpandIcon } = createToolbar({
+    setActiveTool, setResetViewEnabled, updateExpandIcon, refreshPickerIcons } = createToolbar({
     addTooltip: _addTooltip,
     activeTool,
-    onToolChange: (id) => setTool(id),
+    onToolChange: (id, meta) => setTool(id, meta),
     onResetView:  () => resetView(),
     onToggleModal: () => { if (_modalEl) { _closeModal(); } else { _openModal(); } },
+    getToolSettings: () => toolSettings,
   });
 
   // While editing text, don't let settings controls steal focus from the textarea.
@@ -562,8 +567,8 @@ export default function AnnotateImageSimple(container, props) {
       return;
     }
 
-    // Paint/arrow/rect/ellipse tool with a single matching annotation selected: show its settings
-    if (activeTool === "paint" || activeTool === "arrow" || activeTool === "rect" || activeTool === "ellipse") {
+    // Paint/arrow/rect/ellipse/stamp tool with a single matching annotation selected: show its settings
+    if (activeTool === "paint" || activeTool === "arrow" || activeTool === "rect" || activeTool === "ellipse" || activeTool === "stamp") {
       const selIds = currentValue.selected_ids || [];
       if (selIds.length === 1) {
         const selAnn = _effectiveAnnotations().find((a) => a.id === selIds[0]);
@@ -580,7 +585,21 @@ export default function AnnotateImageSimple(container, props) {
 
   // Switches the active tool: commits any open text edit, updates button highlight,
   // resets hover state, rebuilds settings, and emits.
-  function setTool(id) {
+  // meta may contain { activeShape } or { activeStamp } when triggered from the picker.
+  function setTool(id, meta) {
+    if (meta?.activeShape) {
+      if (id === "rect") toolSettings.rect.activeShape = meta.activeShape;
+      currentValue = { ...currentValue, tool_settings: { ...toolSettings } };
+      refreshPickerIcons?.();
+    }
+    if (meta?.activeStamp) {
+      toolSettings.stamp.activeStamp = meta.activeStamp;
+      if (STAMP_PRESET_COLORS[meta.activeStamp]) {
+        toolSettings.stamp.color = STAMP_PRESET_COLORS[meta.activeStamp];
+      }
+      currentValue = { ...currentValue, tool_settings: { ...toolSettings } };
+      refreshPickerIcons?.();
+    }
     commitTextEdit();
     hoverId = null; hoverGroupId = null;
     activeTool = id;
@@ -748,8 +767,14 @@ export default function AnnotateImageSimple(container, props) {
       ctx.save();
       ctx.lineWidth = ts.width || 2;
       ctx.strokeStyle = ts.color || DEFAULT_COLOR;
-      if (ts.fill_color) { ctx.fillStyle = ts.fill_color; ctx.fillRect(rx, ry, rw, rh); }
-      ctx.strokeRect(rx, ry, rw, rh);
+      if (ts.activeShape === "rounded" || ts.activeShape === "pill") {
+        const rad = ts.activeShape === "pill" ? Math.min(rw / 2, rh / 2) : Math.min(rw / 2, rh / 2) * 0.3;
+        if (ts.fill_color) { ctx.fillStyle = ts.fill_color; ctx.beginPath(); ctx.roundRect(rx, ry, rw, rh, rad); ctx.fill(); }
+        ctx.beginPath(); ctx.roundRect(rx, ry, rw, rh, rad); ctx.stroke();
+      } else {
+        if (ts.fill_color) { ctx.fillStyle = ts.fill_color; ctx.fillRect(rx, ry, rw, rh); }
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
       ctx.restore();
     }
 
@@ -768,6 +793,16 @@ export default function AnnotateImageSimple(container, props) {
       if (ts.fill_color) { ctx.fillStyle = ts.fill_color; ctx.fill(); }
       ctx.stroke();
       ctx.restore();
+    }
+
+    // In-progress stamp
+    if (currentStamp) {
+      const ts = toolSettings.stamp;
+      drawStamp({
+        id: "__preview__", type: "stamp", stamp_type: currentStamp.stamp_type,
+        x: currentStamp.x, y: currentStamp.y,
+        size: currentStamp.size, rotation: 0, color: ts.color,
+      }, false);
     }
 
     // Marquee selection rectangle
@@ -805,16 +840,17 @@ export default function AnnotateImageSimple(container, props) {
   // Resolves percentage x/y to pixels before drawing so draw functions stay unaware of % mode.
   function drawAnnotation(ann, selected) {
     const r = _resolveAnn(ann);
-    if (r.type === "paint")   drawPaint(r, selected);
-    else if (r.type === "text")   drawText(r, selected);
-    else if (r.type === "arrow")  drawArrowAnnotation(r, selected);
-    else if (r.type === "rect")   drawRect(r, selected);
+    if (r.type === "paint")        drawPaint(r, selected);
+    else if (r.type === "text")    drawText(r, selected);
+    else if (r.type === "arrow")   drawArrowAnnotation(r, selected);
+    else if (r.type === "rect")    drawRect(r, selected);
     else if (r.type === "ellipse") drawEllipse(r, selected);
+    else if (r.type === "stamp")   drawStamp(r, selected);
   }
 
   // ── drawing functions (bound to live state via factory) ───────────────────
   const drawing = createDrawing(() => ({ ctx, displayScale, hoverId, hoverGroupId, marqueePreviewIds }));
-  const { renderStrokes, drawPaint, drawText, drawArrowLine, drawArrowAnnotation, drawRect, drawEllipse } = drawing;
+  const { renderStrokes, drawPaint, drawText, drawArrowLine, drawArrowAnnotation, drawRect, drawEllipse, drawPolygon, drawStamp } = drawing;
 
   // ── hit testing ───────────────────────────────────────────────────────────
   function hitTest(cx, cy) {
@@ -877,6 +913,9 @@ export default function AnnotateImageSimple(container, props) {
             if (exIn * exIn + eyIn * eyIn >= 1) return rawAnn;
           }
         }
+      } else if (ann.type === "stamp") {
+        const r = (ann.size || DEFAULT_STAMP_SIZE) / 2 + Math.max(4 / displayScale, 4);
+        if (Math.hypot(cx - (ann.x || 0), cy - (ann.y || 0)) <= r) return rawAnn;
       }
     }
     return null;
@@ -921,6 +960,9 @@ export default function AnnotateImageSimple(container, props) {
       }
       const pad = (a.width || 2) / 2 + 4;
       return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+    } else if (ann.type === "stamp") {
+      const r = (ann.size || DEFAULT_STAMP_SIZE) / 2 + 4;
+      return { minX: (ann.x || 0) - r, minY: (ann.y || 0) - r, maxX: (ann.x || 0) + r, maxY: (ann.y || 0) + r };
     }
     return null;
   }
@@ -959,7 +1001,7 @@ export default function AnnotateImageSimple(container, props) {
       const ann = _effectiveAnnotations().find((a) => a.id === selIds[0]);
       if (!ann) { txFrame = null; return; }
       if (ann.type === "arrow") { txFrame = null; return; } // arrows use endpoint handles
-      if (ann.type === "rect" || ann.type === "ellipse") {
+      if (ann.type === "rect" || ann.type === "ellipse" || ann.type === "polygon") {
         const ra = _resolveAnn(ann);
         const { cx, cy } = _shapeCenter(ra);
         txFrame = {
@@ -967,6 +1009,16 @@ export default function AnnotateImageSimple(container, props) {
           rotation: ra.rotation || 0,
           halfW: (ra.w || 10) / 2 + pad,
           halfH: (ra.h || 10) / 2 + pad,
+          _selIds: [...selIds],
+        };
+        return;
+      }
+      if (ann.type === "stamp") {
+        const r = (ann.size || DEFAULT_STAMP_SIZE) / 2;
+        txFrame = {
+          pivotX: ann.x || 0, pivotY: ann.y || 0,
+          rotation: ann.rotation || 0,
+          halfW: r + pad, halfH: r + pad,
           _selIds: [...selIds],
         };
         return;
@@ -1052,6 +1104,10 @@ export default function AnnotateImageSimple(container, props) {
       const b = _getAnnotationBounds(ann);
       if (!b) return false;
       return !(b.maxX < x1 || b.minX > x2 || b.maxY < y1 || b.minY > y2);
+    } else if (ann.type === "stamp") {
+      const r = (ann.size || DEFAULT_STAMP_SIZE) / 2;
+      const ax = ann.x || 0, ay = ann.y || 0;
+      return !(ax + r < x1 || ax - r > x2 || ay + r < y1 || ay - r > y2);
     }
     return false;
   }
@@ -1655,6 +1711,27 @@ export default function AnnotateImageSimple(container, props) {
       rebuildSettings();
       currentEllipse = { x1: cx, y1: cy, x2: cx, y2: cy };
     }
+
+    if (activeTool === "stamp") {
+      const selIds = currentValue.selected_ids || [];
+      const hit = hitTest(cx, cy);
+      if (hit && hit.type === "stamp") {
+        const newSelIds = selIds.includes(hit.id) ? selIds : [hit.id];
+        currentValue = { ...currentValue, selected_ids: newSelIds };
+        const origPositions = {};
+        for (const id of newSelIds) {
+          const a = _effectiveAnnotations().find((ann) => ann.id === id);
+          if (a) origPositions[id] = _makeOrigPos(a);
+        }
+        dragState = { type: "translate", startCx: cx, startCy: cy, origPositions,
+          origPivotX: txFrame?.pivotX, origPivotY: txFrame?.pivotY };
+        canvas.style.cursor = "grabbing";
+        rebuildSettings(); renderCanvas(); return;
+      }
+      currentValue = { ...currentValue, selected_ids: [] };
+      rebuildSettings();
+      currentStamp = { x: cx, y: cy, size: toolSettings.stamp.size, stamp_type: toolSettings.stamp.activeStamp };
+    }
   }
 
   // Handles pointermove: panning, zoom drag, paint stroke extension, shape preview,
@@ -1733,7 +1810,12 @@ export default function AnnotateImageSimple(container, props) {
       currentEllipse = { ...currentEllipse, x2: cx, y2: cy };
       renderCanvas();
 
-    } else if (dragState && (activeTool === "select" || activeTool === "paint" || activeTool === "text" || activeTool === "arrow" || activeTool === "rect" || activeTool === "ellipse")) {
+    } else if (activeTool === "stamp" && currentStamp) {
+      const dist = Math.hypot(cx - currentStamp.x, cy - currentStamp.y);
+      currentStamp = { ...currentStamp, size: Math.max(MIN_STAMP_SIZE, dist * 2) };
+      renderCanvas();
+
+    } else if (dragState && (activeTool === "select" || activeTool === "paint" || activeTool === "text" || activeTool === "arrow" || activeTool === "rect" || activeTool === "ellipse" || activeTool === "stamp")) {
       if (dragState.type === "txRotate") {
         const pivot = dragState.pivot;
         const angle = Math.atan2(cy - pivot.y, cx - pivot.x);
@@ -1807,6 +1889,12 @@ export default function AnnotateImageSimple(container, props) {
               x2: d2x*cos - d2y*sin + pivot.x, y2: d2x*sin + d2y*cos + pivot.y,
               cp1x: dc1x*cos - dc1y*sin + pivot.x, cp1y: dc1x*sin + dc1y*cos + pivot.y,
               cp2x: dc2x*cos - dc2y*sin + pivot.x, cp2y: dc2x*sin + dc2y*cos + pivot.y };
+          } else if (a.type === "stamp") {
+            const dx = snap.x - pivot.x, dy = snap.y - pivot.y;
+            return { ...a,
+              x: dx*cos - dy*sin + pivot.x,
+              y: dx*sin + dy*cos + pivot.y,
+              rotation: snap.rotation + dAngle };
           }
           return a;
         });
@@ -1894,6 +1982,10 @@ export default function AnnotateImageSimple(container, props) {
             const [nc1x, nc1y] = scaleAnchor(snap.cp1x, snap.cp1y);
             const [nc2x, nc2y] = scaleAnchor(snap.cp2x, snap.cp2y);
             return { ...a, x1: nx1, y1: ny1, x2: nx2, y2: ny2, cp1x: nc1x, cp1y: nc1y, cp2x: nc2x, cp2y: nc2y };
+          } else if (a.type === "stamp") {
+            const [ncx, ncy] = scaleAnchor(snap.x, snap.y);
+            const ratio = Math.sqrt(ratioX * ratioY);
+            return { ...a, x: ncx, y: ncy, size: Math.max(MIN_STAMP_SIZE, snap.size * ratio) };
           }
           return a;
         });
@@ -2039,6 +2131,7 @@ export default function AnnotateImageSimple(container, props) {
         const ts = toolSettings.rect;
         const ann = {
           id: _uid("rect"), type: "rect",
+          shape: ts.activeShape || "plain",
           x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2,
           w: Math.abs(r.x2 - r.x1), h: Math.abs(r.y2 - r.y1),
           rotation: 0,
@@ -2072,7 +2165,25 @@ export default function AnnotateImageSimple(container, props) {
       }
       renderCanvas();
 
-    } else if (dragState && (activeTool === "select" || activeTool === "paint" || activeTool === "text" || activeTool === "arrow" || activeTool === "rect" || activeTool === "ellipse")) {
+    } else if (activeTool === "stamp" && currentStamp) {
+      const st = currentStamp;
+      currentStamp = null;
+      const ts = toolSettings.stamp;
+      const ann = {
+        id: _uid("stamp"), type: "stamp",
+        stamp_type: st.stamp_type,
+        x: st.x, y: st.y,
+        size: st.size,
+        rotation: 0,
+        color: ts.color,
+        layer_id: currentValue.active_layer_id || currentValue.layers?.[0]?.id,
+      };
+      currentValue = { ...currentValue, annotations: [...(currentValue.annotations || []), ann], selected_ids: [ann.id] };
+      setTool("select");
+      _emit(); rebuildSettings();
+      renderCanvas();
+
+    } else if (dragState && (activeTool === "select" || activeTool === "paint" || activeTool === "text" || activeTool === "arrow" || activeTool === "rect" || activeTool === "ellipse" || activeTool === "stamp")) {
       if (dragState.type === "marquee") {
         const x1 = Math.min(dragState.startCx, dragState.x2);
         const y1 = Math.min(dragState.startCy, dragState.y2);

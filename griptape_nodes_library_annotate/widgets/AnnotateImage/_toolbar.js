@@ -20,6 +20,7 @@
 //     setActiveTool, setResetViewEnabled, updateExpandIcon }
 
 import { mkIcon } from './_icons.js';
+import { createRectShapePicker, createStampPicker } from './_picker.js';
 
 export const NAV_TOOLS = [
   { id: "select",  title: "Select & Move  [V]" },
@@ -33,9 +34,10 @@ export const DRAW_TOOLS = [
   { id: "arrow",   title: "Arrow  [L]" },
   { id: "rect",    title: "Rectangle  [R]" },
   { id: "ellipse", title: "Ellipse  [O]" },
+  { id: "stamp",   title: "Stamp  [M]"  },
 ];
 
-export function createToolbar({ addTooltip, activeTool, onToolChange, onResetView, onToggleModal }) {
+export function createToolbar({ addTooltip, activeTool, onToolChange, onResetView, onToggleModal, getToolSettings }) {
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,8 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     "background:var(--card);border-right:1px solid var(--border);flex-shrink:0;";
 
   const toolBtns = {};
+  let rectPicker  = null;
+  let stampPicker = null;
 
   function _mkToolBtn(t) {
     const btn = document.createElement("button");
@@ -56,13 +60,88 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     toolBtns[t.id] = btn;
   }
 
+  // Stamp buttons use a dynamic icon and long-press to open picker.
+  function _mkPickerBtn(t, iconPrefix, getActiveId, pickerFactory, onPick) {
+    const btn = document.createElement("button");
+    btn.className = "ais-tool-btn" + (t.id === activeTool ? " active" : "");
+    btn.style.cssText += "position:relative;";
+    addTooltip(btn, t.title + " — long-press to change");
+
+    function _refreshIcon() {
+      btn.innerHTML = "";
+      const iconId = iconPrefix + getActiveId();
+      btn.appendChild(mkIcon(iconId, 15));
+      // Small chevron indicator in bottom-right corner
+      const chev = document.createElement("span");
+      chev.style.cssText =
+        "position:absolute;bottom:2px;right:2px;line-height:1;opacity:0.5;pointer-events:none;font-size:6px;";
+      chev.textContent = "▾";
+      btn.appendChild(chev);
+    }
+    _refreshIcon();
+
+    let longPressTimer = null;
+    let didLongPress = false;
+
+    btn.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      didLongPress = false;
+      longPressTimer = setTimeout(() => {
+        didLongPress = true;
+        const picker = pickerFactory(btn, {
+          onSelect: (id) => {
+            onPick(id);
+            _refreshIcon();
+          },
+          getActive: getActiveId,
+        });
+        if (t.id === "rect") { rectPicker?.destroy(); rectPicker = picker; }
+        else                 { stampPicker?.destroy(); stampPicker = picker; }
+        picker.open();
+      }, 400);
+    });
+
+    btn.addEventListener("pointerup", (e) => {
+      clearTimeout(longPressTimer);
+      if (!didLongPress) { onToolChange(t.id); btn.blur(); }
+    });
+
+    btn.addEventListener("pointerleave", () => { clearTimeout(longPressTimer); });
+
+    sidebar.appendChild(btn);
+    toolBtns[t.id] = btn;
+
+    return { refreshIcon: _refreshIcon };
+  }
+
   for (const t of NAV_TOOLS) _mkToolBtn(t);
 
   const sideDiv = document.createElement("div");
   sideDiv.style.cssText = "width:20px;height:1px;background:var(--border);margin:2px 0;flex-shrink:0;";
   sidebar.appendChild(sideDiv);
 
-  for (const t of DRAW_TOOLS) _mkToolBtn(t);
+  const pickerBtns = {};
+  for (const t of DRAW_TOOLS) {
+    if (t.id === "rect") {
+      pickerBtns.rect = _mkPickerBtn(
+        t,
+        "rect-",
+        () => (getToolSettings?.()?.rect?.activeShape ?? "plain"),
+        createRectShapePicker,
+        (shape) => onToolChange("rect", { activeShape: shape }),
+      );
+    } else if (t.id === "stamp") {
+      pickerBtns.stamp = _mkPickerBtn(
+        t,
+        "stamp-",
+        () => (getToolSettings?.()?.stamp?.activeStamp ?? "checkmark"),
+        createStampPicker,
+        (stampType) => onToolChange("stamp", { activeStamp: stampType }),
+      );
+    } else {
+      _mkToolBtn(t);
+    }
+  }
 
   // ── Header bar ─────────────────────────────────────────────────────────────
 
@@ -182,5 +261,10 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     expandBtn.appendChild(mkIcon(isExpanded ? "contract" : "expand", 15));
   }
 
-  return { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns, setActiveTool, setResetViewEnabled, updateExpandIcon };
+  function refreshPickerIcons() {
+    pickerBtns.rect?.refreshIcon();
+    pickerBtns.stamp?.refreshIcon();
+  }
+
+  return { sidebar, headerBar, settingsArea, objectActionsEl, layersBtn, layersLabelEl, layersIconWrap, toolBtns, setActiveTool, setResetViewEnabled, updateExpandIcon, refreshPickerIcons };
 }

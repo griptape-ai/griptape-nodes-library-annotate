@@ -4,12 +4,13 @@
 
 import { paintCenter, defaultCps, naturalBounds, getTransformedCorners } from './_geometry.js';
 import {
-  DEFAULT_COLOR, DEFAULT_PAINT_SIZE, DEFAULT_ARROW_WIDTH, DEFAULT_ARROW_SIZE, DEFAULT_TEXT_SIZE, MIN_TEXT_SIZE, DEFAULT_SHAPE_WIDTH,
+  DEFAULT_COLOR, DEFAULT_PAINT_SIZE, DEFAULT_ARROW_WIDTH, DEFAULT_ARROW_SIZE, DEFAULT_TEXT_SIZE, MIN_TEXT_SIZE, DEFAULT_SHAPE_WIDTH, DEFAULT_STAMP_SIZE,
   SEL_COLOR_RGB, HOVER_OPACITY, HANDLE_FILL, HANDLE_STROKE_OPACITY, CP_LINE_OPACITY,
   LINE_WIDTH_PRIMARY, LINE_WIDTH_SECONDARY,
   HANDLE_RADIUS, CP_HANDLE_RADIUS,
   DASH_CP_LINE, HOVER_PAD,
 } from './_styles.js';
+import { ICON_PATHS } from './_icons.js';
 
 export function createDrawing(getState) {
 
@@ -362,17 +363,37 @@ export function createDrawing(getState) {
     const ah = ann.anchor_h || "center", av = ann.anchor_v || "middle";
     const cx = (ann.x || 0) + (ah === "left" ? hw : ah === "right" ? -hw : 0);
     const cy = (ann.y || 0) + (av === "top" ? hh : av === "bottom" ? -hh : 0);
+    const isRounded = ann.shape === "rounded";
+    const isPill = ann.shape === "pill";
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(ann.rotation || 0);
     ctx.lineWidth = ann.width || DEFAULT_SHAPE_WIDTH;
-    if (ann.fill_color) { ctx.fillStyle = ann.fill_color; ctx.fillRect(-hw, -hh, hw * 2, hh * 2); }
-    if (ann.color) { ctx.strokeStyle = ann.color; ctx.strokeRect(-hw, -hh, hw * 2, hh * 2); }
-    if (isHovered(ann) && !selected) {
-      const pad = HOVER_PAD / displayScale;
-      ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
-      ctx.lineWidth = LINE_WIDTH_PRIMARY / displayScale;
-      ctx.strokeRect(-hw - pad, -hh - pad, hw * 2 + pad * 2, hh * 2 + pad * 2);
+    if (isRounded || isPill) {
+      const r = isPill ? Math.min(hw, hh) : Math.min(hw, hh) * 0.3;
+      if (ann.fill_color) {
+        ctx.fillStyle = ann.fill_color;
+        ctx.beginPath(); ctx.roundRect(-hw, -hh, hw * 2, hh * 2, r); ctx.fill();
+      }
+      if (ann.color) {
+        ctx.strokeStyle = ann.color;
+        ctx.beginPath(); ctx.roundRect(-hw, -hh, hw * 2, hh * 2, r); ctx.stroke();
+      }
+      if (isHovered(ann) && !selected) {
+        const pad = HOVER_PAD / displayScale;
+        ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
+        ctx.lineWidth = LINE_WIDTH_PRIMARY / displayScale;
+        ctx.beginPath(); ctx.roundRect(-hw - pad, -hh - pad, hw * 2 + pad * 2, hh * 2 + pad * 2, r + pad); ctx.stroke();
+      }
+    } else {
+      if (ann.fill_color) { ctx.fillStyle = ann.fill_color; ctx.fillRect(-hw, -hh, hw * 2, hh * 2); }
+      if (ann.color) { ctx.strokeStyle = ann.color; ctx.strokeRect(-hw, -hh, hw * 2, hh * 2); }
+      if (isHovered(ann) && !selected) {
+        const pad = HOVER_PAD / displayScale;
+        ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
+        ctx.lineWidth = LINE_WIDTH_PRIMARY / displayScale;
+        ctx.strokeRect(-hw - pad, -hh - pad, hw * 2 + pad * 2, hh * 2 + pad * 2);
+      }
     }
     ctx.restore();
   }
@@ -402,5 +423,95 @@ export function createDrawing(getState) {
     ctx.restore();
   }
 
-  return { renderStrokes, drawPaint, drawText, drawArrowLine, drawArrowAnnotation, drawRect, drawEllipse };
+  // Render a Lucide icon (SVG innerHTML string) at 24×24 onto the current ctx.
+  // ctx must already be transformed so that 0,0 maps to the top-left of a 24×24 square.
+  // Elements with fill="currentColor" are filled; all others are stroked.
+  function _drawLucideIconOnCanvas(ctx, svgInner) {
+    const tmp = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    tmp.innerHTML = svgInner;
+    for (const el of tmp.children) {
+      const tag = el.tagName.toLowerCase();
+      const hasFill = el.getAttribute("fill") === "currentColor";
+      if (tag === "path") {
+        const p = new Path2D(el.getAttribute("d") || "");
+        if (hasFill) ctx.fill(p); else ctx.stroke(p);
+      } else if (tag === "line") {
+        ctx.beginPath();
+        ctx.moveTo(+el.getAttribute("x1"), +el.getAttribute("y1"));
+        ctx.lineTo(+el.getAttribute("x2"), +el.getAttribute("y2"));
+        ctx.stroke();
+      } else if (tag === "circle") {
+        ctx.beginPath();
+        ctx.arc(+el.getAttribute("cx"), +el.getAttribute("cy"),
+                +el.getAttribute("r"), 0, Math.PI * 2);
+        if (hasFill) ctx.fill(); else ctx.stroke();
+      } else if (tag === "polyline") {
+        const pts = (el.getAttribute("points") || "").trim().split(/[\s,]+/).map(Number);
+        if (pts.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(pts[0], pts[1]);
+          for (let i = 2; i + 1 < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+          ctx.stroke();
+        }
+      } else if (tag === "rect") {
+        const rx = +el.getAttribute("rx") || 0;
+        const bx = +el.getAttribute("x") || 0, by = +el.getAttribute("y") || 0;
+        const bw = +el.getAttribute("width") || 0, bh = +el.getAttribute("height") || 0;
+        if (rx) ctx.roundRect(bx, by, bw, bh, rx); else ctx.rect(bx, by, bw, bh);
+        if (hasFill) ctx.fill(); else ctx.stroke();
+      }
+    }
+  }
+
+  function drawStamp(ann, selected) {
+    const { ctx, displayScale } = getState();
+    const sz = ann.size || DEFAULT_STAMP_SIZE;
+    const color = ann.color || DEFAULT_COLOR;
+    const r = sz / 2;
+    const iconKey = "stamp-" + (ann.stamp_type || "checkmark");
+    const iconSvg = ICON_PATHS[iconKey] || ICON_PATHS["stamp-checkmark"] || "";
+
+    ctx.save();
+    ctx.translate(ann.x || 0, ann.y || 0);
+    ctx.rotate(ann.rotation || 0);
+
+    // Filled disc (the sticker background)
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    // White border ring
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,1.0)";
+    ctx.lineWidth = Math.max(1, sz * 0.04);
+    ctx.stroke();
+
+    // Lucide icon in white, scaled from 24×24 to stamp size with 15% padding
+    const pad = sz * 0.15;
+    const scale = (sz - pad * 2) / 24;
+    ctx.save();
+    ctx.translate(-r + pad, -r + pad);
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    _drawLucideIconOnCanvas(ctx, iconSvg);
+    ctx.restore();
+
+    if (isHovered(ann) && !selected) {
+      const hr = sz / 2 + HOVER_PAD / displayScale;
+      ctx.strokeStyle = `rgba(${SEL_COLOR_RGB},${HOVER_OPACITY})`;
+      ctx.lineWidth = LINE_WIDTH_PRIMARY / displayScale;
+      ctx.beginPath();
+      ctx.arc(0, 0, hr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  return { renderStrokes, drawPaint, drawText, drawArrowLine, drawArrowAnnotation, drawRect, drawEllipse, drawStamp };
 }

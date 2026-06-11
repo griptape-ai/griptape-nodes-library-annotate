@@ -527,6 +527,30 @@ export function createPositionPopup(settingsArea, {
     _buildOrderItems(popup, ann, dismiss);
   }
 
+  function _buildStampContent(popup, ann, dismiss) {
+    const { currentValue } = getState();
+    const cw = currentValue.canvas_width  || DEFAULT_CANVAS_WIDTH;
+    const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+    mkSectionLabel(popup, "Position");
+    mkXYPad(popup, Math.round(ann.x ?? 0), Math.round(ann.y ?? 0), {
+      unit: "px", step: 1,
+      onXY: (nx, ny, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, x: nx, y: ny }));
+        rebuildTxFrame(); renderCanvas(); if (doEmit) emit();
+      },
+    });
+    mkDivider(popup);
+    mkSectionLabel(popup, "Transform");
+    _mkRotationDial(popup, Math.round((ann.rotation ?? 0) * RAD_TO_DEG * 10) / 10, (v, doEmit) => {
+      applySingleUpdate(ann.id, (a) => ({ ...a, rotation: v * DEG_TO_RAD }));
+      rebuildTxFrame(); renderCanvas(); if (doEmit) emit();
+    });
+    mkDivider(popup);
+    _annAlignGrid(popup, ann.id, cw, ch);
+    mkDivider(popup);
+    _buildOrderItems(popup, ann, dismiss);
+  }
+
   // Translate a single annotation object by (dx, dy) — pure, no side effects.
   function _translateAnn(a, dx, dy) {
     if (a.type === "arrow") return {
@@ -626,8 +650,9 @@ export function createPositionPopup(settingsArea, {
     for (const a of groupAnns) {
       const snap = snapshotAnn(a);
       snap._was_percentage = !!a.percentage;
-      snap._anchor_h = a.anchor_h || (a.type === "rect" || a.type === "ellipse" ? "center" : "left");
-      snap._anchor_v = a.anchor_v || (a.type === "rect" || a.type === "ellipse" ? "middle" : "top");
+      const centerAnchor = a.type === "rect" || a.type === "ellipse";
+      snap._anchor_h = a.anchor_h || (centerAnchor ? "center" : "left");
+      snap._anchor_v = a.anchor_v || (centerAnchor ? "middle" : "top");
       origSnapshots[a.id] = snap;
     }
 
@@ -672,6 +697,10 @@ export function createPositionPopup(settingsArea, {
           const nx = np.x - xOff, ny = np.y - yOff;
           if (snap._was_percentage) return { ...a, x: nx / cw * 100, y: ny / ch * 100, rotation: snap.rotation + totalRad };
           return { ...a, x: nx, y: ny, rotation: snap.rotation + totalRad };
+        }
+        if (a.type === "stamp") {
+          const np = _rotPt(snap.x, snap.y);
+          return { ...a, x: np.x, y: np.y, rotation: snap.rotation + totalRad };
         }
         // text: orbit anchor point, update rotation
         const xPx = snap._was_percentage ? snap.x / 100 * cw : snap.x;
@@ -726,6 +755,8 @@ export function createPositionPopup(settingsArea, {
         _buildArrowContent(popup, ann, dismiss);
       else if (ann.type === "paint")
         _buildPaintContent(popup, ann, dismiss);
+      else if (ann.type === "stamp")
+        _buildStampContent(popup, ann, dismiss);
     });
   }
 

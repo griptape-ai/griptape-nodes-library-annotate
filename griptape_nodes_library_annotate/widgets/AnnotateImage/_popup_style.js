@@ -17,6 +17,7 @@ import {
   DEFAULT_ARROW_SIZE, MIN_ARROW_SIZE, MAX_ARROW_SIZE,
   DEFAULT_ARROW_HEAD_WIDTH, MIN_ARROW_HEAD_WIDTH, MAX_ARROW_HEAD_WIDTH,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
+  DEFAULT_STAMP_SIZE, MIN_STAMP_SIZE, MAX_STAMP_SIZE,
 } from './_styles.js';
 
 export function createStylePopup(settingsArea, {
@@ -461,6 +462,29 @@ export function createStylePopup(settingsArea, {
       } });
   }
 
+  function _buildStampToolContent(popup, ts) {
+    mkSectionLabel(popup, "Stamp");
+    mkScrubNumRow(popup, "Size", ts.size ?? DEFAULT_STAMP_SIZE,
+      { min: MIN_STAMP_SIZE, max: MAX_STAMP_SIZE, step: 1, onChange: (sz, doEmit) => {
+        const s = getState();
+        s.toolSettings.stamp.size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
+  }
+
+  function _buildStampAnnContent(popup, ann) {
+    mkSectionLabel(popup, "Stamp");
+    mkScrubNumRow(popup, "Size", ann.size ?? DEFAULT_STAMP_SIZE,
+      { min: MIN_STAMP_SIZE, max: MAX_STAMP_SIZE, step: 1, onChange: (sz, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, size: sz }));
+        const s = getState();
+        s.toolSettings.stamp.size = sz;
+        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
+        renderCanvas(); if (doEmit) emit();
+      } });
+  }
+
   // ── multi-select content ─────────────────────────────────────────────────────
 
   function _buildMultiContent(popup, selIds) {
@@ -472,6 +496,7 @@ export function createStylePopup(settingsArea, {
         origSizes[a.id] = a.width ?? DEFAULT_ARROW_WIDTH;
         origArrowSizes[a.id] = a.arrow_size ?? DEFAULT_ARROW_SIZE;
       } else if (a.type === "rect" || a.type === "ellipse") origSizes[a.id] = a.width ?? DEFAULT_SHAPE_WIDTH;
+      else if (a.type === "stamp") origSizes[a.id] = a.size ?? DEFAULT_STAMP_SIZE;
     }
     mkSectionLabel(popup, "Scale");
     mkScrubNumRow(popup, "Scale", 100,
@@ -487,6 +512,9 @@ export function createStylePopup(settingsArea, {
           };
           if (a.type === "rect" || a.type === "ellipse") return {
             ...a, width: Math.max(1, (origSizes[a.id] ?? DEFAULT_SHAPE_WIDTH) * ratio),
+          };
+          if (a.type === "stamp") return {
+            ...a, size: Math.max(MIN_STAMP_SIZE, (origSizes[a.id] ?? DEFAULT_STAMP_SIZE) * ratio),
           };
           return a;
         });
@@ -524,20 +552,22 @@ export function createStylePopup(settingsArea, {
     const btn = buildPopupTrigger(settingsArea, "Style", "paintbrush", true);
     wirePopupToggle(btn, (popup) => {
       const ts = toolSettings[activeTool] || {};
-      if (activeTool === "paint")                              _buildPaintToolContent(popup, ts);
-      else if (activeTool === "text")                          _buildTextToolContent(popup, ts);
-      else if (activeTool === "arrow")                         _buildArrowToolContent(popup, ts);
+      if (activeTool === "paint")                                                    _buildPaintToolContent(popup, ts);
+      else if (activeTool === "text")                                                _buildTextToolContent(popup, ts);
+      else if (activeTool === "arrow")                                               _buildArrowToolContent(popup, ts);
       else if (activeTool === "rect" || activeTool === "ellipse") _buildShapeToolContent(popup, ts, activeTool);
+      else if (activeTool === "stamp")                                               _buildStampToolContent(popup, ts);
     });
   }
 
   function buildForAnnotation(ann) {
     const btn = buildPopupTrigger(settingsArea, "Style", "paintbrush", true);
     wirePopupToggle(btn, (popup) => {
-      if (ann.type === "paint")                              _buildPaintAnnContent(popup, ann);
-      else if (ann.type === "text")                          _buildTextAnnContent(popup, ann);
-      else if (ann.type === "arrow")                         _buildArrowAnnContent(popup, ann);
+      if (ann.type === "paint")                                                    _buildPaintAnnContent(popup, ann);
+      else if (ann.type === "text")                                                _buildTextAnnContent(popup, ann);
+      else if (ann.type === "arrow")                                               _buildArrowAnnContent(popup, ann);
       else if (ann.type === "rect" || ann.type === "ellipse") _buildShapeAnnContent(popup, ann);
+      else if (ann.type === "stamp")                                               _buildStampAnnContent(popup, ann);
     });
   }
 
