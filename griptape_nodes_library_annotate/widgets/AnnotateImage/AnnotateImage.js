@@ -46,7 +46,7 @@ export default function AnnotateImageSimple(container, props) {
   injectStyles();
 
   const { onChange } = props;
-  const rawValue = (props.value && typeof props.value === "object") ? props.value : {};
+  const rawValue = _roundedPayload((props.value && typeof props.value === "object") ? props.value : {});
   const defTS = defaultData().tool_settings;
   const rawTS = rawValue.tool_settings || {};
   let currentValue = { ...defaultData(), ...rawValue, tool_settings: {
@@ -2077,7 +2077,7 @@ export default function AnnotateImageSimple(container, props) {
     canvas.style.cursor = _cursorForPos(cx, cy);
 
     if (activeTool === "paint" && currentStroke && currentStroke.points.length >= 1) {
-      currentStroke.points = decimatePoints(currentStroke.points);
+      currentStroke.points = _rdp(currentStroke.points, 0.5);
       const stroke = currentStroke;
       currentStroke = null;
       // Each stroke = its own paint annotation with independent transform
@@ -2352,16 +2352,67 @@ export default function AnnotateImageSimple(container, props) {
   // ── emit / uid ─────────────────────────────────────────────────────────────
   let _emitSeq = 0;
 
+  // Ramer-Douglas-Peucker point reduction. Removes points that deviate less than
+  // epsilon pixels from the straight line between their neighbours.
+  // Idempotent: running again with the same epsilon produces identical output.
+  function _rdp(pts, epsilon) {
+    if (pts.length <= 2) return pts;
+    const [x1, y1] = pts[0];
+    const [x2, y2] = pts[pts.length - 1];
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+    let maxDist = 0, maxIdx = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = len > 0
+        ? Math.abs(dx * (y1 - pts[i][1]) - (x1 - pts[i][0]) * dy) / len
+        : Math.hypot(pts[i][0] - x1, pts[i][1] - y1);
+      if (d > maxDist) { maxDist = d; maxIdx = i; }
+    }
+    if (maxDist > epsilon) {
+      const l = _rdp(pts.slice(0, maxIdx + 1), epsilon);
+      const r = _rdp(pts.slice(maxIdx), epsilon);
+      return [...l.slice(0, -1), ...r];
+    }
+    return [pts[0], pts[pts.length - 1]];
+  }
+
+  // Round a number to 2 decimal places — sub-pixel precision is enough for canvas coords.
+  function _r2(v) { return typeof v === "number" ? Math.round(v * 100) / 100 : v; }
+
+  function _roundAnn(ann) {
+    if (!ann || typeof ann !== "object") return ann;
+    // Build a without null/undefined fields — they serialize as "null" but the code treats
+    // missing and null identically (== null checks throughout), so omitting saves bytes.
+    const a = Object.fromEntries(Object.entries(ann).filter(([, v]) => v !== null && v !== undefined));
+    for (const k of ["x","y","x1","y1","x2","y2","cp1x","cp1y","cp2x","cp2y","w","h","cx","cy","rotation","scaleX","scaleY","sizeScale"]) {
+      if (typeof a[k] === "number") a[k] = _r2(a[k]);
+    }
+    if (Array.isArray(a.strokes)) {
+      a.strokes = a.strokes.map((s) => ({
+        ...s,
+        points: _rdp(s.points || [], 0.5).map(([px, py, sz]) => [_r2(px), _r2(py), _r2(sz)]),
+      }));
+    }
+    return a;
+  }
+
+  function _roundedPayload(payload) {
+    const anns = (payload.annotations || []).map(_roundAnn);
+    const imported = (payload.imported_annotations || []).map(_roundAnn);
+    const ovr = {};
+    for (const [id, ov] of Object.entries(payload.overrides || {})) ovr[id] = _roundAnn(ov);
+    return { ...payload, annotations: anns, imported_annotations: imported, overrides: ovr };
+  }
+
   // Increments _emitSeq and calls onChange with the full current state.
   // _emitSeq lets handleUpdate detect and discard stale roundtrip echoes.
   function _emit() {
     _emitSeq++;
-    if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
+    if (onChange) onChange(_roundedPayload({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq }));
   }
 
   // Sends the current state without touching _emitSeq (seq already claimed).
   function _sendState() {
-    if (onChange) onChange({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq });
+    if (onChange) onChange(_roundedPayload({ ...currentValue, tool_settings: { ...toolSettings }, _emitSeq }));
   }
 
   // Debounced emit for rapid-fire paint strokes. Coalesces bursts into a single send
@@ -2416,7 +2467,7 @@ export default function AnnotateImageSimple(container, props) {
     }
 
     // Fresh update — apply fully
-    const nv = { ...defaultData(), ...rawNv };
+    const nv = { ...defaultData(), ..._roundedPayload(rawNv) };
     if (rawNv.selected_id && !rawNv.selected_ids) {
       nv.selected_ids = [rawNv.selected_id];
     } else if (!Array.isArray(nv.selected_ids)) {
