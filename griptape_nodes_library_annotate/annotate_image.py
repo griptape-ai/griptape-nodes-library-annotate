@@ -143,7 +143,7 @@ class AnnotateImage(DataNode):
                 "canvas_width": w or data.get("canvas_width", 0),
                 "canvas_height": h or data.get("canvas_height", 0),
             }
-            self.set_parameter_value("output_annotation_data", new_data)
+            self.parameter_output_values["output_annotation_data"] = new_data
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
         if parameter.name == "input_annotation_data" and isinstance(value, dict):
@@ -171,7 +171,7 @@ class AnnotateImage(DataNode):
             if not isinstance(data, dict):
                 data = _default_annotation_data()
             new_data = {**data, "imported_annotations": imported, "imported_layers": imported_layers}
-            self.set_parameter_value("output_annotation_data", new_data)
+            self.parameter_output_values["output_annotation_data"] = new_data
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
         return super().after_value_set(parameter, value)
@@ -916,7 +916,6 @@ class AnnotateImage(DataNode):
         saved = dest.write_bytes(buf.getvalue())
 
         artifact = ImageUrlArtifact(value=saved.location)
-        self.set_parameter_value("output_image", artifact)
         self.parameter_output_values["output_image"] = artifact
         self.publish_update_to_parameter("output_image", artifact)
 
