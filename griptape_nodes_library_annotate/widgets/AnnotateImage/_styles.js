@@ -11,16 +11,12 @@ export const MIN_TEXT_SIZE         = 8;
 export const MAX_TEXT_SIZE         = 120;
 
 export const DEFAULT_ARROW_WIDTH   = 8;
-export const MIN_ARROW_WIDTH       = 1;
+export const MIN_ARROW_WIDTH       = 2;
 export const MAX_ARROW_WIDTH       = 40;
 
-export const DEFAULT_ARROW_SIZE       = 20;
-export const MIN_ARROW_SIZE           = 5;
-export const MAX_ARROW_SIZE           = 100;
-
-export const DEFAULT_ARROW_HEAD_WIDTH = 32;
-export const MIN_ARROW_HEAD_WIDTH     = 2;
-export const MAX_ARROW_HEAD_WIDTH     = 200;
+export const DEFAULT_ARROW_SCALE      = 4;
+export const MIN_ARROW_SCALE          = 1;
+export const MAX_ARROW_SCALE          = 15;
 
 export const DEFAULT_SHAPE_WIDTH   = 8;
 export const MIN_SHAPE_WIDTH       = 1;
@@ -113,7 +109,7 @@ export function defaultData() {
     tool_settings: {
       paint:   { color: DEFAULT_COLOR, size: DEFAULT_PAINT_SIZE, pressure: false, pressureMin: 0 },
       text:    { color: DEFAULT_COLOR, font_size: DEFAULT_TEXT_SIZE, text_align: "left", bg_color: "" },
-      arrow:   { color: DEFAULT_COLOR, width: DEFAULT_ARROW_WIDTH, arrow_size: DEFAULT_ARROW_SIZE, arrow_head_width: DEFAULT_ARROW_HEAD_WIDTH, start_arrow_shape: "none", end_arrow_shape: "triangle", is_bezier: false, taper: false, taperMin: 0 },
+      arrow:   { color: DEFAULT_COLOR, width: DEFAULT_ARROW_WIDTH, arrow_scale: DEFAULT_ARROW_SCALE, start_arrow_shape: "none", end_arrow_shape: "triangle", is_bezier: false, taper: false, taperMin: 2 },
       rect:    { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "", activeShape: "plain" },
       ellipse: { color: DEFAULT_COLOR, width: DEFAULT_SHAPE_WIDTH, fill_color: "" },
       stamp:   { color: STAMP_PRESET_COLORS.checkmark, activeStamp: "checkmark", size: DEFAULT_STAMP_SIZE },

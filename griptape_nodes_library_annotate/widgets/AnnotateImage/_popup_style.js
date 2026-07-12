@@ -14,8 +14,7 @@ import {
   DEFAULT_PAINT_SIZE, MIN_PAINT_SIZE, MAX_PAINT_SIZE,
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
   DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH,
-  DEFAULT_ARROW_SIZE, MIN_ARROW_SIZE, MAX_ARROW_SIZE,
-  DEFAULT_ARROW_HEAD_WIDTH, MIN_ARROW_HEAD_WIDTH, MAX_ARROW_HEAD_WIDTH,
+  DEFAULT_ARROW_SCALE, MIN_ARROW_SCALE, MAX_ARROW_SCALE,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
   DEFAULT_STAMP_SIZE, MIN_STAMP_SIZE, MAX_STAMP_SIZE,
 } from './_styles.js';
@@ -319,17 +318,10 @@ export function createStylePopup(settingsArea, {
       popup.innerHTML = "";
       _buildArrowToolContent(popup, getState().toolSettings.arrow);
     });
-    mkScrubNumRow(popup, "Length", ts.arrow_size ?? DEFAULT_ARROW_SIZE,
-      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
+    mkScrubNumRow(popup, "Scale", ts.arrow_scale ?? DEFAULT_ARROW_SCALE,
+      { min: MIN_ARROW_SCALE, max: MAX_ARROW_SCALE, step: 1, onChange: (sz, doEmit) => {
         const s = getState();
-        s.toolSettings.arrow.arrow_size = sz;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas(); if (doEmit) emit();
-      } });
-    mkScrubNumRow(popup, "Width", ts.arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH,
-      { min: MIN_ARROW_HEAD_WIDTH, max: MAX_ARROW_HEAD_WIDTH, step: 1, onChange: (sz, doEmit) => {
-        const s = getState();
-        s.toolSettings.arrow.arrow_head_width = sz;
+        s.toolSettings.arrow.arrow_scale = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
       } });
@@ -390,7 +382,6 @@ export function createStylePopup(settingsArea, {
 
   function _buildArrowAnnContent(popup, ann) {
     const currentWidth = ann.width ?? DEFAULT_ARROW_WIDTH;
-    const effectiveHeadWidth = ann.arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH;
     mkSectionLabel(popup, "Stroke");
     let setTaperMax = null;
     mkScrubNumRow(popup, "Width", currentWidth,
@@ -432,19 +423,11 @@ export function createStylePopup(settingsArea, {
       popup.innerHTML = "";
       _buildArrowAnnContent(popup, fresh);
     });
-    mkScrubNumRow(popup, "Length", ann.arrow_size ?? DEFAULT_ARROW_SIZE,
-      { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
-        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_size: sz }));
+    mkScrubNumRow(popup, "Scale", ann.arrow_scale ?? DEFAULT_ARROW_SCALE,
+      { min: MIN_ARROW_SCALE, max: MAX_ARROW_SCALE, step: 1, onChange: (sz, doEmit) => {
+        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_scale: sz }));
         const s = getState();
-        s.toolSettings.arrow.arrow_size = sz;
-        setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
-        renderCanvas(); if (doEmit) emit();
-      } });
-    mkScrubNumRow(popup, "Width", effectiveHeadWidth,
-      { min: MIN_ARROW_HEAD_WIDTH, max: MAX_ARROW_HEAD_WIDTH, step: 1, onChange: (sz, doEmit) => {
-        applySingleUpdate(ann.id, (a) => ({ ...a, arrow_head_width: sz }));
-        const s = getState();
-        s.toolSettings.arrow.arrow_head_width = sz;
+        s.toolSettings.arrow.arrow_scale = sz;
         setCurrentValue({ ...s.currentValue, tool_settings: { ...s.toolSettings } });
         renderCanvas(); if (doEmit) emit();
       } });
@@ -489,13 +472,11 @@ export function createStylePopup(settingsArea, {
 
   function _buildMultiContent(popup, selIds) {
     const anns = effectiveAnnotations().filter((a) => selIds.includes(a.id));
-    const origSizes = {}, origArrowSizes = {};
+    const origSizes = {};
     for (const a of anns) {
       if (a.type === "paint") origSizes[a.id] = a.sizeScale ?? 1;
-      else if (a.type === "arrow") {
-        origSizes[a.id] = a.width ?? DEFAULT_ARROW_WIDTH;
-        origArrowSizes[a.id] = a.arrow_size ?? DEFAULT_ARROW_SIZE;
-      } else if (a.type === "rect" || a.type === "ellipse") origSizes[a.id] = a.width ?? DEFAULT_SHAPE_WIDTH;
+      else if (a.type === "arrow") origSizes[a.id] = a.width ?? DEFAULT_ARROW_WIDTH;
+      else if (a.type === "rect" || a.type === "ellipse") origSizes[a.id] = a.width ?? DEFAULT_SHAPE_WIDTH;
       else if (a.type === "stamp") origSizes[a.id] = a.size ?? DEFAULT_STAMP_SIZE;
     }
     mkSectionLabel(popup, "Scale");
@@ -507,8 +488,7 @@ export function createStylePopup(settingsArea, {
           if (a.type === "text")    return a;
           if (a.type === "arrow")   return {
             ...a,
-            width:      Math.max(1, (origSizes[a.id] ?? DEFAULT_ARROW_WIDTH) * ratio),
-            arrow_size: Math.max(5, (origArrowSizes[a.id] ?? DEFAULT_ARROW_SIZE) * ratio),
+            width: Math.max(1, (origSizes[a.id] ?? DEFAULT_ARROW_WIDTH) * ratio),
           };
           if (a.type === "rect" || a.type === "ellipse") return {
             ...a, width: Math.max(1, (origSizes[a.id] ?? DEFAULT_SHAPE_WIDTH) * ratio),
@@ -525,19 +505,10 @@ export function createStylePopup(settingsArea, {
     if (arrowAnns.length > 0) {
       mkDivider(popup);
       mkSectionLabel(popup, "Arrow Head");
-      mkScrubNumRow(popup, "Length", arrowAnns[0].arrow_size ?? DEFAULT_ARROW_SIZE,
-        { min: MIN_ARROW_SIZE, max: MAX_ARROW_SIZE, step: 1, onChange: (sz, doEmit) => {
+      mkScrubNumRow(popup, "Scale", arrowAnns[0].arrow_scale ?? DEFAULT_ARROW_SCALE,
+        { min: MIN_ARROW_SCALE, max: MAX_ARROW_SCALE, step: 1, onChange: (sz, doEmit) => {
           const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
-            if (a.type === "arrow") return { ...a, arrow_size: sz };
-            return a;
-          });
-          setCurrentValue({ ...getState().currentValue, annotations, overrides });
-          renderCanvas(); if (doEmit) emit();
-        } });
-      mkScrubNumRow(popup, "Width", arrowAnns[0].arrow_head_width ?? DEFAULT_ARROW_HEAD_WIDTH,
-        { min: MIN_ARROW_HEAD_WIDTH, max: MAX_ARROW_HEAD_WIDTH, step: 1, onChange: (sz, doEmit) => {
-          const { annotations, overrides } = applyAnnotationMap(selIds, (a) => {
-            if (a.type === "arrow") return { ...a, arrow_head_width: sz };
+            if (a.type === "arrow") return { ...a, arrow_scale: sz };
             return a;
           });
           setCurrentValue({ ...getState().currentValue, annotations, overrides });

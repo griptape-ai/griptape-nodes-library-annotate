@@ -4,7 +4,7 @@
 
 import { paintCenter, defaultCps, naturalBounds, getTransformedCorners } from './_geometry.js';
 import {
-  DEFAULT_COLOR, DEFAULT_PAINT_SIZE, DEFAULT_ARROW_WIDTH, DEFAULT_ARROW_SIZE, DEFAULT_TEXT_SIZE, MIN_TEXT_SIZE, DEFAULT_SHAPE_WIDTH, DEFAULT_STAMP_SIZE,
+  DEFAULT_COLOR, DEFAULT_PAINT_SIZE, DEFAULT_ARROW_WIDTH, DEFAULT_ARROW_SCALE, DEFAULT_TEXT_SIZE, MIN_TEXT_SIZE, DEFAULT_SHAPE_WIDTH, DEFAULT_STAMP_SIZE,
   SEL_COLOR_RGB, HOVER_OPACITY, HANDLE_FILL, HANDLE_STROKE_OPACITY, CP_LINE_OPACITY,
   LINE_WIDTH_PRIMARY, LINE_WIDTH_SECONDARY,
   HANDLE_RADIUS, CP_HANDLE_RADIUS,
@@ -204,7 +204,7 @@ export function createDrawing(getState) {
     }
   }
 
-  function drawArrowLine(x1, y1, x2, y2, color, width, arrowSize, cp1x, cp1y, cp2x, cp2y, startShape, endShape, taper, taperMin = 0, arrowHeadWidth = null) {
+  function drawArrowLine(x1, y1, x2, y2, color, width, arrowScale, cp1x, cp1y, cp2x, cp2y, startShape, endShape, taper, taperMin = 0) {
     const { ctx } = getState();
     if (cp1x == null) cp1x = x1 + (x2 - x1) / 3;
     if (cp1y == null) cp1y = y1 + (y2 - y1) / 3;
@@ -212,8 +212,9 @@ export function createDrawing(getState) {
     if (cp2y == null) cp2y = y1 + (y2 - y1) * 2 / 3;
     if (endShape == null) endShape = "triangle";
     const w = Math.max(1, width);
-    const aLen = Math.max(5, arrowSize ?? DEFAULT_ARROW_SIZE);
-    const halfW = arrowHeadWidth != null ? arrowHeadWidth / 2 : Math.max(w * 2, aLen * 0.4);
+    const scale = Math.max(1, arrowScale ?? DEFAULT_ARROW_SCALE);
+    const aLen = w * scale;
+    const halfW = aLen / 2;
 
     const hasEnd   = endShape   && endShape   !== "none";
     const hasStart = startShape && startShape !== "none";
@@ -315,9 +316,9 @@ export function createDrawing(getState) {
     const startShape = ann.start_arrow_shape ?? (ann.has_start_arrow ? "triangle" : "none");
     const endShape   = ann.end_arrow_shape   ?? (ann.has_end_arrow !== false ? "triangle" : "none");
     drawArrowLine(ann.x1, ann.y1, ann.x2, ann.y2, ann.color, ann.width || DEFAULT_ARROW_WIDTH,
-      ann.arrow_size ?? DEFAULT_ARROW_SIZE,
+      ann.arrow_scale ?? DEFAULT_ARROW_SCALE,
       cp1x, cp1y, cp2x, cp2y, startShape, endShape,
-      ann.taper ?? false, ann.taperMin ?? 0, ann.arrow_head_width ?? null);
+      ann.taper ?? false, ann.taperMin ?? 0);
     if (selected) {
       const r = HANDLE_RADIUS / displayScale;
       ctx.save();

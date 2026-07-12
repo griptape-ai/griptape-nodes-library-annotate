@@ -8,7 +8,7 @@ import {
   DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, DEFAULT_COLOR,
   DEFAULT_PAINT_SIZE, MIN_PAINT_SIZE, MAX_PAINT_SIZE,
   DEFAULT_TEXT_SIZE,  MIN_TEXT_SIZE,  MAX_TEXT_SIZE,
-  DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH, DEFAULT_ARROW_SIZE,
+  DEFAULT_ARROW_WIDTH, MIN_ARROW_WIDTH, MAX_ARROW_WIDTH, DEFAULT_ARROW_SCALE,
   DEFAULT_SHAPE_WIDTH, MIN_SHAPE_WIDTH, MAX_SHAPE_WIDTH,
   DEFAULT_STAMP_SIZE, MIN_STAMP_SIZE, STAMP_PRESET_COLORS,
   SEL_COLOR, SEL_COLOR_RGB, IMP_COLOR, IMP_COLOR_RGB,
@@ -749,11 +749,11 @@ export default function AnnotateImageSimple(container, props) {
       const ts = toolSettings.arrow;
       drawArrowLine(
         currentArrow.x1, currentArrow.y1, currentArrow.x2, currentArrow.y2,
-        ts.color || DEFAULT_COLOR, ts.width || DEFAULT_ARROW_WIDTH, ts.arrow_size ?? DEFAULT_ARROW_SIZE,
+        ts.color || DEFAULT_COLOR, ts.width || DEFAULT_ARROW_WIDTH, ts.arrow_scale ?? DEFAULT_ARROW_SCALE,
         null, null, null, null,
         ts.start_arrow_shape ?? (ts.has_start_arrow ? "triangle" : "none"),
         ts.end_arrow_shape   ?? (ts.has_end_arrow !== false ? "triangle" : "none"),
-        ts.taper ?? false, ts.taperMin ?? 0, ts.arrow_head_width ?? null
+        ts.taper ?? false, ts.taperMin ?? 0
       );
     }
 
@@ -2115,7 +2115,7 @@ export default function AnnotateImageSimple(container, props) {
           cp2x: arr.x1 + (cx - arr.x1) * 2 / 3, cp2y: arr.y1 + (cy - arr.y1) * 2 / 3,
           color: ts.color,
           width: ts.width,
-          arrow_size: ts.arrow_size ?? DEFAULT_ARROW_SIZE,
+          arrow_scale: ts.arrow_scale ?? DEFAULT_ARROW_SCALE,
           start_arrow_shape: ts.start_arrow_shape ?? (ts.has_start_arrow ? "triangle" : "none"),
           end_arrow_shape:   ts.end_arrow_shape   ?? (ts.has_end_arrow !== false ? "triangle" : "none"),
           is_bezier: ts.is_bezier ?? false,
