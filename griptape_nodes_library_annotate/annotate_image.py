@@ -473,9 +473,9 @@ class AnnotateImage(DataNode):
             return
         color = self._parse_color(color_str)
         w = max(1.0, float(ann.get("width", 8)))
-        a_len = max(5.0, float(ann.get("arrow_size", 20)))
-        raw_hw = ann.get("arrow_head_width")
-        half_w = float(raw_hw) / 2 if raw_hw is not None else max(w * 2, a_len * 0.4)
+        scale = max(1.0, float(ann.get("arrow_scale", 4)))
+        a_len = w * scale
+        half_w = a_len / 2
 
         end_shape = ann.get("end_arrow_shape") or ("triangle" if ann.get("has_end_arrow", True) else "none")
         start_shape = ann.get("start_arrow_shape") or ("triangle" if ann.get("has_start_arrow", False) else "none")
