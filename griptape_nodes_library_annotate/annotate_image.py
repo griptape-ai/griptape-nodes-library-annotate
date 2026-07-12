@@ -143,7 +143,7 @@ class AnnotateImage(DataNode):
                 "canvas_width": w or data.get("canvas_width", 0),
                 "canvas_height": h or data.get("canvas_height", 0),
             }
-            self.set_parameter_value("output_annotation_data", new_data)
+            self.parameter_output_values["output_annotation_data"] = new_data
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
         if parameter.name == "input_annotation_data" and isinstance(value, dict):
@@ -171,7 +171,7 @@ class AnnotateImage(DataNode):
             if not isinstance(data, dict):
                 data = _default_annotation_data()
             new_data = {**data, "imported_annotations": imported, "imported_layers": imported_layers}
-            self.set_parameter_value("output_annotation_data", new_data)
+            self.parameter_output_values["output_annotation_data"] = new_data
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
         return super().after_value_set(parameter, value)
@@ -473,9 +473,9 @@ class AnnotateImage(DataNode):
             return
         color = self._parse_color(color_str)
         w = max(1.0, float(ann.get("width", 8)))
-        a_len = max(5.0, float(ann.get("arrow_size", 20)))
-        raw_hw = ann.get("arrow_head_width")
-        half_w = float(raw_hw) / 2 if raw_hw is not None else max(w * 2, a_len * 0.4)
+        scale = max(1.0, float(ann.get("arrow_scale", 4)))
+        a_len = w * scale
+        half_w = a_len / 2
 
         end_shape = ann.get("end_arrow_shape") or ("triangle" if ann.get("has_end_arrow", True) else "none")
         start_shape = ann.get("start_arrow_shape") or ("triangle" if ann.get("has_start_arrow", False) else "none")
@@ -916,7 +916,6 @@ class AnnotateImage(DataNode):
         saved = dest.write_bytes(buf.getvalue())
 
         artifact = ImageUrlArtifact(value=saved.location)
-        self.set_parameter_value("output_image", artifact)
         self.parameter_output_values["output_image"] = artifact
         self.publish_update_to_parameter("output_image", artifact)
 
