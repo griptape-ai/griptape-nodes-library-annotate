@@ -223,7 +223,7 @@ Do **not** discard `a` with `_` or hardcode `255`.
 
 - Exports `default function AnnotateImageSimple(container, props)`
 - Returns `{ cleanup, update: handleUpdate }` — framework calls `update` on value changes
-- Owns all top-level state: `currentValue`, `activeTool`, `toolSettings`, view transform (`viewScale`, `panX`, `panY`)
+- Owns all top-level state: `currentValue`, `activeTool`, `toolSettings`, view transform (`viewScale`, `panX`, `panY`), cursor modifiers (`isAltHeld`, `isSpaceHeld`)
 - Wires all modules together via dependency injection (closures)
 - Calls `ensureLayers(currentValue)` at init to guarantee a valid layer exists
 
@@ -324,6 +324,19 @@ hidden_ids = {layer["id"] for layer in layers if not layer.get("visible", True)}
 ```
 
 CI runs `ruff check` — this will fail the PR if you use `l` as a loop variable.
+
+### Synthetic `pointerdown` from the Host App — Critical Gotcha
+
+`griptape-vsl-gui` dispatches a synthetic `pointerdown` from `document.body` (via `dismissOpenPopovers`) on every node click to close Radix UI popovers. Synthetic events have `isTrusted: false`. **Every** document-level outside-click dismiss handler in the widget must guard against this:
+
+```js
+function _outsideClick(e) {
+  if (!e.isTrusted) return;   // ← required — synthetic events must not dismiss our panels
+  if (!panel.contains(e.target)) dismiss();
+}
+```
+
+Omitting this guard causes all panels/popups to close the instant the user clicks anywhere in the node. This affects `_layers.js`, `_picker.js`, `_object_actions.js`, `_colorpicker.js`, `_popup_utils.js`, and `_toolbar.js`.
 
 ---
 

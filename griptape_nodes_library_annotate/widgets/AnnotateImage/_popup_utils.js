@@ -72,6 +72,7 @@ export function openPopup(triggerEl, { onDismiss } = {}) {
     if (onDismiss) onDismiss();
   }
   function _outside(e) {
+    if (!e.isTrusted) return;
     if (!popup.contains(e.target) && !triggerEl.contains(e.target)) dismiss();
   }
   function _keydown(e) {

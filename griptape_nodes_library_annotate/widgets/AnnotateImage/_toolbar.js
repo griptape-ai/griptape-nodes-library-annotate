@@ -324,35 +324,44 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
   helpBtn.appendChild(mkIcon("circle-help", 15));
 
   let _hotkeysPanel = null;
+  let _hotkeysCleanup = null;
 
   function _toggleHotkeys() {
     if (_hotkeysPanel) {
       _hotkeysPanel.remove();
       _hotkeysPanel = null;
+      _hotkeysCleanup?.();
+      _hotkeysCleanup = null;
       return;
     }
     _hotkeysPanel = _buildHotkeysPanel();
     headerBar.appendChild(_hotkeysPanel);
 
+    function _cleanup() {
+      document.removeEventListener("pointerdown", _dismiss, { capture: true });
+      document.removeEventListener("keydown", _dismissKey, { capture: true });
+      _hotkeysCleanup = null;
+    }
     function _dismiss(e) {
+      if (!e.isTrusted) return;
       if (_hotkeysPanel && !_hotkeysPanel.contains(e.target) && e.target !== helpBtn) {
         _hotkeysPanel.remove();
         _hotkeysPanel = null;
-        document.removeEventListener("pointerdown", _dismiss, { capture: true });
+        _cleanup();
       }
     }
     function _dismissKey(e) {
       if (e.key === "Escape") {
         _hotkeysPanel?.remove();
         _hotkeysPanel = null;
-        document.removeEventListener("pointerdown", _dismiss, { capture: true });
-        document.removeEventListener("keydown", _dismissKey, { capture: true });
+        _cleanup();
       }
     }
     // Defer so the current pointerdown that opened the panel doesn't immediately close it.
     setTimeout(() => {
       document.addEventListener("pointerdown", _dismiss, { capture: true });
       document.addEventListener("keydown", _dismissKey, { capture: true });
+      _hotkeysCleanup = _cleanup;
     }, 0);
   }
 

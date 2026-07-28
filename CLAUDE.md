@@ -33,3 +33,4 @@ Dependency management uses `uv`. Add Python packages to `pyproject.toml`, then r
 - `/annotate-image-node` — understanding the AnnotateImage node architecture
 - `/annotate-image-icons` — adding icons to the widget
 - `/annotate-image-layers` — working on the layers system
+- `/annotate-image-hotkeys` — working on keyboard shortcuts and the hotkeys panel

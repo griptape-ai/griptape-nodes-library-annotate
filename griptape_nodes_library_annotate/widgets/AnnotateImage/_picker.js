@@ -73,6 +73,7 @@ function _createPicker(anchorBtn, items, iconPrefix, { onSelect, getActive }) {
     // Dismiss on outside click (next frame so the current event doesn't immediately close)
     requestAnimationFrame(() => {
       outside = (e) => {
+        if (!e.isTrusted) return;
         if (!panel) return;
         if (!panel.contains(e.target) && e.target !== anchorBtn) {
           close();
