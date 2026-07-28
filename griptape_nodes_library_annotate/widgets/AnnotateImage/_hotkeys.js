@@ -26,7 +26,8 @@ export function setupHotkeys(getState, actions) {
   const {
     setTool, resetView, rebuildSettings, emit, renderCanvas,
     deleteAnnotations, duplicateSelected, setCurrentValue, setTxFrame,
-    applySingleUpdate, effectiveAnnotations, onPointerDown, wrapper,
+    applySingleUpdate, effectiveAnnotations, onPointerDown,
+    toggleModal, onSpacePanStart, onSpacePanEnd, wrapper,
   } = actions;
 
   function _onAltDown(e) {
@@ -153,6 +154,46 @@ export function setupHotkeys(getState, actions) {
     duplicateSelected();
   }
 
+  // Tap Space → toggle modal. Hold Space (>200ms) → temporary pan, like Alt+drag.
+  const _SPACE_HOLD_MS = 200;
+  let _spaceTimer = null;
+  let _spacePanning = false;
+  let _spaceActive = false; // true while a space press originated here is in flight
+
+  function _spaceDownInterceptor(e) {
+    if (e.code !== "Space") return;
+    if (!getState().mouseIsOver) return;
+    if (getState().textEditId) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat || _spaceActive) return; // already tracking this press
+    _spaceActive = true;
+    _spaceTimer = setTimeout(() => {
+      _spaceTimer = null;
+      _spacePanning = true;
+      onSpacePanStart();
+    }, _SPACE_HOLD_MS);
+  }
+
+  function _spaceUpInterceptor(e) {
+    if (e.code !== "Space") return;
+    if (!_spaceActive) return; // wasn't captured by us
+    e.preventDefault();
+    e.stopPropagation();
+    _spaceActive = false;
+    if (_spaceTimer !== null) {
+      clearTimeout(_spaceTimer);
+      _spaceTimer = null;
+      toggleModal(); // tap
+    } else if (_spacePanning) {
+      _spacePanning = false;
+      onSpacePanEnd();
+    }
+  }
+
   function _toolHotkeyInterceptor(e) {
     const { mouseIsOver, textEditId } = getState();
     if (!mouseIsOver) return;
@@ -176,6 +217,8 @@ export function setupHotkeys(getState, actions) {
   document.addEventListener("keydown", _deleteInterceptor,    { capture: true });
   document.addEventListener("keydown", _duplicateInterceptor, { capture: true });
   document.addEventListener("keydown", _sizeInterceptor,      { capture: true });
+  document.addEventListener("keydown", _spaceDownInterceptor,  { capture: true });
+  document.addEventListener("keyup",   _spaceUpInterceptor,    { capture: true });
   document.addEventListener("keydown", _toolHotkeyInterceptor, { capture: true });
 
   return function cleanup() {
@@ -187,6 +230,8 @@ export function setupHotkeys(getState, actions) {
     document.removeEventListener("keydown", _deleteInterceptor,    { capture: true });
     document.removeEventListener("keydown", _duplicateInterceptor, { capture: true });
     document.removeEventListener("keydown", _sizeInterceptor,      { capture: true });
+    document.removeEventListener("keydown", _spaceDownInterceptor, { capture: true });
+    document.removeEventListener("keyup",   _spaceUpInterceptor,   { capture: true });
     document.removeEventListener("keydown", _toolHotkeyInterceptor, { capture: true });
   };
 }

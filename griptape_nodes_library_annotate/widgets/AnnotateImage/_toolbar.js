@@ -147,7 +147,7 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
 
   const headerBar = document.createElement("div");
   headerBar.style.cssText =
-    "display:flex;align-items:center;" +
+    "display:flex;align-items:center;position:relative;" +
     "padding:4px 8px;background:var(--card);" +
     "border-bottom:1px solid var(--border);flex-shrink:0;min-height:38px;";
 
@@ -232,7 +232,7 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
 
   const expandBtn = document.createElement("button");
   expandBtn.className = "ais-tool-btn";
-  addTooltip(expandBtn, "Expand to modal");
+  addTooltip(expandBtn, "Expand to modal  [Space]");
   expandBtn.appendChild(mkIcon("expand", 15));
   expandBtn.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
@@ -240,6 +240,124 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     expandBtn.blur();
   });
   viewControls.appendChild(expandBtn);
+
+  // ── Hotkeys panel ──────────────────────────────────────────────────────────
+
+  const _HOTKEY_SECTIONS = [
+    { title: "Tools", items: [
+      { keys: ["V"], desc: "Select & Move" },
+      { keys: ["H"], desc: "Pan" },
+      { keys: ["Z"], desc: "Zoom" },
+      { keys: ["D"], desc: "Draw" },
+      { keys: ["T"], desc: "Text" },
+      { keys: ["L"], desc: "Arrow" },
+      { keys: ["R"], desc: "Rectangle" },
+      { keys: ["O"], desc: "Ellipse" },
+      { keys: ["M"], desc: "Stamp" },
+    ]},
+    { title: "View", items: [
+      { keys: ["F"], desc: "Fit canvas to window" },
+      { keys: ["Space"], desc: "Expand / collapse modal" },
+    ]},
+    { title: "Edit", items: [
+      { keys: ["⌫", "Del"], desc: "Delete selected" },
+      { keys: ["⌘D", "Ctrl+D"], desc: "Duplicate selected" },
+      { keys: ["[", "]"], desc: "Adjust size" },
+      { keys: ["Alt+drag"], desc: "Temporary pan" },
+    ]},
+  ];
+
+  function _buildHotkeysPanel() {
+    const panel = document.createElement("div");
+    panel.style.cssText =
+      "position:absolute;top:calc(100% + 4px);right:0;z-index:300;" +
+      "background:var(--popover,var(--card));border:1px solid var(--border);" +
+      "border-radius:8px;padding:10px 14px 12px;min-width:248px;" +
+      "box-shadow:0 4px 20px rgba(0,0,0,0.35);font-size:12px;line-height:1.5;" +
+      "font-family:inherit;";
+
+    for (let si = 0; si < _HOTKEY_SECTIONS.length; si++) {
+      const section = _HOTKEY_SECTIONS[si];
+      const heading = document.createElement("div");
+      heading.style.cssText =
+        "font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;" +
+        "opacity:0.45;margin-bottom:3px;" + (si === 0 ? "" : "margin-top:10px;");
+      heading.textContent = section.title;
+      panel.appendChild(heading);
+
+      for (const item of section.items) {
+        const row = document.createElement("div");
+        row.style.cssText =
+          "display:flex;align-items:center;justify-content:space-between;gap:12px;padding:1px 0;";
+
+        const desc = document.createElement("span");
+        desc.style.cssText = "opacity:0.75;white-space:nowrap;";
+        desc.textContent = item.desc;
+
+        const keysWrap = document.createElement("span");
+        keysWrap.style.cssText = "display:flex;align-items:center;gap:3px;flex-shrink:0;";
+        for (const key of item.keys) {
+          const kbd = document.createElement("kbd");
+          kbd.style.cssText =
+            "display:inline-block;padding:1px 5px;border-radius:4px;" +
+            "background:var(--muted);border:1px solid var(--border);" +
+            "font-family:inherit;font-size:11px;font-weight:600;white-space:nowrap;";
+          kbd.textContent = key;
+          keysWrap.appendChild(kbd);
+        }
+
+        row.appendChild(desc);
+        row.appendChild(keysWrap);
+        panel.appendChild(row);
+      }
+    }
+    return panel;
+  }
+
+  const helpDivider = document.createElement("div");
+  helpDivider.style.cssText = "width:1px;height:20px;background:var(--border);margin:0 2px;flex-shrink:0;";
+  viewControls.appendChild(helpDivider);
+
+  const helpBtn = document.createElement("button");
+  helpBtn.className = "ais-tool-btn";
+  addTooltip(helpBtn, "Keyboard shortcuts");
+  helpBtn.appendChild(mkIcon("circle-help", 15));
+
+  let _hotkeysPanel = null;
+
+  function _toggleHotkeys() {
+    if (_hotkeysPanel) {
+      _hotkeysPanel.remove();
+      _hotkeysPanel = null;
+      return;
+    }
+    _hotkeysPanel = _buildHotkeysPanel();
+    headerBar.appendChild(_hotkeysPanel);
+
+    function _dismiss(e) {
+      if (_hotkeysPanel && !_hotkeysPanel.contains(e.target) && e.target !== helpBtn) {
+        _hotkeysPanel.remove();
+        _hotkeysPanel = null;
+        document.removeEventListener("pointerdown", _dismiss, { capture: true });
+      }
+    }
+    function _dismissKey(e) {
+      if (e.key === "Escape") {
+        _hotkeysPanel?.remove();
+        _hotkeysPanel = null;
+        document.removeEventListener("pointerdown", _dismiss, { capture: true });
+        document.removeEventListener("keydown", _dismissKey, { capture: true });
+      }
+    }
+    // Defer so the current pointerdown that opened the panel doesn't immediately close it.
+    setTimeout(() => {
+      document.addEventListener("pointerdown", _dismiss, { capture: true });
+      document.addEventListener("keydown", _dismissKey, { capture: true });
+    }, 0);
+  }
+
+  helpBtn.addEventListener("pointerdown", (e) => { e.stopPropagation(); _toggleHotkeys(); helpBtn.blur(); });
+  viewControls.appendChild(helpBtn);
 
   headerBar.appendChild(viewControls);
 
