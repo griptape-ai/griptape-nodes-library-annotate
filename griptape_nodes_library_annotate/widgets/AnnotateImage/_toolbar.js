@@ -335,10 +335,12 @@ export function createToolbar({ addTooltip, activeTool, onToolChange, onResetVie
     headerBar.appendChild(_hotkeysPanel);
 
     function _dismiss(e) {
+      if (!e.isTrusted) return;
       if (_hotkeysPanel && !_hotkeysPanel.contains(e.target) && e.target !== helpBtn) {
         _hotkeysPanel.remove();
         _hotkeysPanel = null;
         document.removeEventListener("pointerdown", _dismiss, { capture: true });
+        document.removeEventListener("keydown", _dismissKey, { capture: true });
       }
     }
     function _dismissKey(e) {

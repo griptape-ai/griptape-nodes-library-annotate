@@ -361,6 +361,7 @@ export function createColorPicker({ color, hasAlpha = false, label = null, clear
       if (_closeActive === _close) _closeActive = null;
     }
     function _outside(e) {
+      if (!e.isTrusted) return;
       // Exclude clicks on the swatch itself so it can toggle the popup closed
       if (!swatch.contains(e.target) && popup && !popup.contains(e.target)) _close();
     }

@@ -105,6 +105,7 @@ export function createHud(el, {
   }
 
   function _outsideActionHandler(e) {
+    if (!e.isTrusted) return;
     if (actionPopup && !actionPopup.contains(e.target)) _dismissActionPopup();
   }
 
@@ -341,6 +342,7 @@ export function createHud(el, {
 
       // Dismiss on outside click
       const dismiss = (ev) => {
+        if (!ev.isTrusted) return;
         if (!popup.contains(ev.target)) {
           _dismissLayerPopup();
           document.removeEventListener("pointerdown", dismiss, { capture: true });

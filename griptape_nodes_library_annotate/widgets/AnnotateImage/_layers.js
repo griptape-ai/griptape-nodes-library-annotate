@@ -68,6 +68,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
     document.removeEventListener("pointerdown", _outsideMoveClick, true);
   }
   function _outsideMoveClick(e) {
+    if (!e.isTrusted) return;
     if (moveDropdown && !moveDropdown.contains(e.target)) _dismissMoveDropdown();
   }
 
@@ -76,6 +77,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
     document.removeEventListener("pointerdown", _outsideMoreClick, true);
   }
   function _outsideMoreClick(e) {
+    if (!e.isTrusted) return;
     if (moreMenu && !moreMenu.contains(e.target)) _dismissMoreMenu();
   }
 
@@ -87,6 +89,7 @@ export function createLayersPanel(buttonEl, labelEl, iconWrapEl, {
     document.removeEventListener("pointerdown", _outsidePanelClick, true);
   }
   function _outsidePanelClick(e) {
+    if (!e.isTrusted) return;
     // Don't dismiss when clicking inside submenus (they live in document.body, not inside panel)
     if (moreMenu?.contains(e.target) || moveDropdown?.contains(e.target)) return;
     if (panel && !panel.contains(e.target) && !buttonEl.contains(e.target)) dismiss();
