@@ -4,6 +4,7 @@
 // expandGroupSelection(anns, hitId) — pure helper, exported for use in pointer handlers
 
 import { IMP_COLOR, IMP_COLOR_RGB, SEL_COLOR_RGB, LAYER_HOVER_OPACITY } from './_styles.js';
+import { mkIcon } from './_icons.js';
 
 // Given the full effective annotation list and a hit annotation id, returns all IDs in
 // the same group, or [hitId] if the annotation is ungrouped.
@@ -86,6 +87,7 @@ export function createHud(el, {
   setCurrentValue,    // (v) => void
   effectiveAnnotations,
   applyAnnotationMap,
+  duplicateSelected,
   commitTextEdit,
   uid,
   emit,
@@ -374,6 +376,11 @@ export function createHud(el, {
     function _hudSep() { const s = document.createElement("div"); s.className = "ais-hud-sep"; el.appendChild(s); }
 
     if (hasSelection) {
+      // Duplicate — always first when something is selected
+      const _dupIconEl = mkIcon("copy", 16);
+      _hudBtn({ label: "Duplicate  [⌘D]", icon: _dupIconEl.outerHTML, trigger: () => duplicateSelected() });
+      _hudSep();
+
       // Group / ungroup — contextual to selection
       const _groupIcon   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5c0-1.1.9-2 2-2h2"/><path d="M17 3h2c1.1 0 2 .9 2 2v2"/><path d="M21 17v2c0 1.1-.9 2-2 2h-2"/><path d="M7 21H5c-1.1 0-2-.9-2-2v-2"/><rect width="7" height="5" x="7" y="7" rx="1"/><rect width="7" height="5" x="10" y="12" rx="1"/></svg>';
       const _ungroupIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="6" x="5" y="4" rx="1"/><rect width="8" height="6" x="11" y="14" rx="1"/></svg>';
