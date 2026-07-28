@@ -25,7 +25,7 @@ const TOOL_HOTKEYS = { v: "select", h: "hand", z: "zoom", d: "paint", t: "text",
 export function setupHotkeys(getState, actions) {
   const {
     setTool, resetView, rebuildSettings, emit, renderCanvas,
-    deleteAnnotations, setCurrentValue, setTxFrame,
+    deleteAnnotations, duplicateSelected, setCurrentValue, setTxFrame,
     applySingleUpdate, effectiveAnnotations, onPointerDown, wrapper,
   } = actions;
 
@@ -140,6 +140,19 @@ export function setupHotkeys(getState, actions) {
     }
   }
 
+  function _duplicateInterceptor(e) {
+    if (!getState().mouseIsOver) return;
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "d") return;
+    // Always swallow Cmd+D when mouse is over the canvas to prevent node duplication.
+    e.stopPropagation();
+    e.preventDefault();
+    const { textEditId, activeTool, currentValue } = getState();
+    if (textEditId) return;
+    if (activeTool !== "select") return;
+    if (!(currentValue.selected_ids || []).length) return;
+    duplicateSelected();
+  }
+
   function _toolHotkeyInterceptor(e) {
     const { mouseIsOver, textEditId } = getState();
     if (!mouseIsOver) return;
@@ -161,6 +174,7 @@ export function setupHotkeys(getState, actions) {
   document.addEventListener("mousedown",   _shiftInterceptor, { capture: true });
   document.addEventListener("click",       _shiftInterceptor, { capture: true });
   document.addEventListener("keydown", _deleteInterceptor,    { capture: true });
+  document.addEventListener("keydown", _duplicateInterceptor, { capture: true });
   document.addEventListener("keydown", _sizeInterceptor,      { capture: true });
   document.addEventListener("keydown", _toolHotkeyInterceptor, { capture: true });
 
@@ -171,6 +185,7 @@ export function setupHotkeys(getState, actions) {
     document.removeEventListener("mousedown",   _shiftInterceptor, { capture: true });
     document.removeEventListener("click",       _shiftInterceptor, { capture: true });
     document.removeEventListener("keydown", _deleteInterceptor,    { capture: true });
+    document.removeEventListener("keydown", _duplicateInterceptor, { capture: true });
     document.removeEventListener("keydown", _sizeInterceptor,      { capture: true });
     document.removeEventListener("keydown", _toolHotkeyInterceptor, { capture: true });
   };

@@ -267,6 +267,53 @@ export default function AnnotateImageSimple(container, props) {
     };
   }
 
+  function _duplicateSelected() {
+    const selIds = new Set(currentValue.selected_ids || []);
+    if (!selIds.size) return;
+    const selAnns = _effectiveAnnotations().filter((a) => selIds.has(a.id));
+    if (!selAnns.length) return;
+
+    const OFFSET = 10;
+    const groupIdMap = {};
+
+    const newAnns = selAnns.map((ann) => {
+      let newGroupId;
+      if (ann.group_id) {
+        if (!groupIdMap[ann.group_id]) groupIdMap[ann.group_id] = _uid("grp");
+        newGroupId = groupIdMap[ann.group_id];
+      }
+      const copy = { ...ann, id: _uid("ann") };
+      delete copy._imported;
+      if (newGroupId) copy.group_id = newGroupId;
+      else delete copy.group_id;
+
+      if (ann.type === "arrow") {
+        copy.x1 = (ann.x1 || 0) + OFFSET; copy.y1 = (ann.y1 || 0) + OFFSET;
+        copy.x2 = (ann.x2 || 0) + OFFSET; copy.y2 = (ann.y2 || 0) + OFFSET;
+        if (ann.cp1x != null) copy.cp1x = ann.cp1x + OFFSET;
+        if (ann.cp1y != null) copy.cp1y = ann.cp1y + OFFSET;
+        if (ann.cp2x != null) copy.cp2x = ann.cp2x + OFFSET;
+        if (ann.cp2y != null) copy.cp2y = ann.cp2y + OFFSET;
+      } else if (ann.percentage) {
+        const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+        const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+        copy.x = (ann.x || 0) + OFFSET / cw * 100;
+        copy.y = (ann.y || 0) + OFFSET / ch * 100;
+      } else {
+        copy.x = (ann.x || 0) + OFFSET;
+        copy.y = (ann.y || 0) + OFFSET;
+      }
+      return copy;
+    });
+
+    currentValue = {
+      ...currentValue,
+      annotations: [...(currentValue.annotations || []), ...newAnns],
+      selected_ids: newAnns.map((a) => a.id),
+    };
+    _emit(); rebuildSettings(); renderCanvas();
+  }
+
   // Resolves percentage x/y to pixel coordinates for text/rect/ellipse annotations.
   // Returns the annotation unchanged for other types or when percentage mode is off.
   function _resolveAnn(ann) {
@@ -1275,6 +1322,7 @@ export default function AnnotateImageSimple(container, props) {
       setTool, resetView, rebuildSettings,
       emit: _emit, renderCanvas,
       deleteAnnotations: _deleteAnnotations,
+      duplicateSelected: _duplicateSelected,
       setCurrentValue: (v) => { currentValue = v; },
       setTxFrame: (f) => { txFrame = f; },
       applySingleUpdate: _applySingleUpdate,
@@ -2600,6 +2648,7 @@ export default function AnnotateImageSimple(container, props) {
     setCurrentValue: (v) => { currentValue = v; },
     effectiveAnnotations: _effectiveAnnotations,
     applyAnnotationMap: _applyAnnotationMap,
+    duplicateSelected: _duplicateSelected,
     commitTextEdit,
     uid: _uid,
     emit: _emit,
