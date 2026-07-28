@@ -283,6 +283,7 @@ export default function AnnotateImageSimple(container, props) {
         newGroupId = groupIdMap[ann.group_id];
       }
       const copy = { ...ann, id: _uid("ann") };
+      delete copy._imported;
       if (newGroupId) copy.group_id = newGroupId;
       else delete copy.group_id;
 
@@ -293,6 +294,11 @@ export default function AnnotateImageSimple(container, props) {
         if (ann.cp1y != null) copy.cp1y = ann.cp1y + OFFSET;
         if (ann.cp2x != null) copy.cp2x = ann.cp2x + OFFSET;
         if (ann.cp2y != null) copy.cp2y = ann.cp2y + OFFSET;
+      } else if (ann.percentage) {
+        const cw = currentValue.canvas_width || DEFAULT_CANVAS_WIDTH;
+        const ch = currentValue.canvas_height || DEFAULT_CANVAS_HEIGHT;
+        copy.x = (ann.x || 0) + OFFSET / cw * 100;
+        copy.y = (ann.y || 0) + OFFSET / ch * 100;
       } else {
         copy.x = (ann.x || 0) + OFFSET;
         copy.y = (ann.y || 0) + OFFSET;

@@ -4,7 +4,7 @@
 // expandGroupSelection(anns, hitId) — pure helper, exported for use in pointer handlers
 
 import { IMP_COLOR, IMP_COLOR_RGB, SEL_COLOR_RGB, LAYER_HOVER_OPACITY } from './_styles.js';
-import { mkIcon } from './_icons.js';
+import { ICON_PATHS } from './_icons.js';
 
 // Given the full effective annotation list and a hit annotation id, returns all IDs in
 // the same group, or [hitId] if the annotation is ungrouped.
@@ -377,8 +377,8 @@ export function createHud(el, {
 
     if (hasSelection) {
       // Duplicate — always first when something is selected
-      const _dupIconEl = mkIcon("copy", 16);
-      _hudBtn({ label: "Duplicate  [⌘D]", icon: _dupIconEl.outerHTML, trigger: () => duplicateSelected() });
+      const _dupIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS["copy"]}</svg>`;
+      _hudBtn({ label: "Duplicate  [⌘D]", icon: _dupIcon, trigger: () => duplicateSelected() });
       _hudSep();
 
       // Group / ungroup — contextual to selection
