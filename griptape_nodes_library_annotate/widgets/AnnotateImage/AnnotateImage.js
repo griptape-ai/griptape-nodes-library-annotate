@@ -79,6 +79,7 @@ export default function AnnotateImageSimple(container, props) {
   let isPanning = false;
   let panStartX = 0, panStartY = 0;
   let isAltHeld = false;
+  let isSpaceHeld = false;
 
   // ── Tooltip system ────────────────────────────────────────────────────────
   const _tooltip = createTooltip();
@@ -532,7 +533,7 @@ export default function AnnotateImageSimple(container, props) {
   // Base CSS cursor for the active tool when not hovering a specific handle.
   function _currentToolCursor() {
     if (activeTool === "zoom") return isAltHeld ? "zoom-out" : "zoom-in";
-    if (isAltHeld) return "grab";
+    if (isAltHeld || isSpaceHeld) return "grab";
     if (activeTool === "hand") return "grab";
     if (_isActiveLayerLocked() && activeTool !== "hand" && activeTool !== "zoom") return "not-allowed";
     if (activeTool === "select") return "default";
@@ -1330,6 +1331,9 @@ export default function AnnotateImageSimple(container, props) {
       onPointerDown,
       onAltDown: () => { if (!isAltHeld) { isAltHeld = true; if (!isPointerDown) canvas.style.cursor = "grab"; } },
       onAltUp:   () => { isAltHeld = false; if (!isPanning && !isPointerDown) canvas.style.cursor = _currentToolCursor(); },
+      onSpacePanStart: () => { if (!isSpaceHeld) { isSpaceHeld = true; if (!isPointerDown) canvas.style.cursor = "grab"; } },
+      onSpacePanEnd:   () => { isSpaceHeld = false; if (!isPanning && !isPointerDown) canvas.style.cursor = _currentToolCursor(); },
+      toggleModal: () => { if (_modalEl) { _closeModal(); } else { _openModal(); } },
       wrapper,
     }
   );
@@ -1354,7 +1358,7 @@ export default function AnnotateImageSimple(container, props) {
   // can own the drag cleanly with document-level move/up — no setPointerCapture needed.
   wrapper.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
-    if (!isAltHeld && activeTool !== "hand") return;
+    if (!isAltHeld && !isSpaceHeld && activeTool !== "hand") return;
     // Let clicks on the sidebar and header bar through so tool buttons remain clickable.
     if (sidebar.contains(e.target) || headerBar.contains(e.target)) return;
     e.preventDefault();
@@ -1371,7 +1375,7 @@ export default function AnnotateImageSimple(container, props) {
       setResetViewEnabled(!(viewScale === 1 && panX === 0 && panY === 0));
     }
     function _panUp() {
-      canvas.style.cursor = isAltHeld ? "grab" : _currentToolCursor();
+      canvas.style.cursor = _currentToolCursor();
       document.removeEventListener("pointermove", _panMove);
       document.removeEventListener("pointerup",   _panUp);
       document.removeEventListener("pointercancel", _panUp);
