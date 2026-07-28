@@ -136,13 +136,16 @@ class AnnotateImage(DataNode):
             data = self.get_parameter_value("output_annotation_data") or _default_annotation_data()
             if not isinstance(data, dict):
                 data = _default_annotation_data()
-            new_data = {
-                **data,
-                "image_url": browser_url,
-                "raw_url": raw,
-                "canvas_width": w or data.get("canvas_width", 0),
-                "canvas_height": h or data.get("canvas_height", 0),
-            }
+            new_w = w or data.get("canvas_width", 0)
+            new_h = h or data.get("canvas_height", 0)
+            if (
+                browser_url == data.get("image_url")
+                and raw == data.get("raw_url")
+                and new_w == data.get("canvas_width")
+                and new_h == data.get("canvas_height")
+            ):
+                return super().after_value_set(parameter, value)
+            new_data = {**data, "image_url": browser_url, "raw_url": raw, "canvas_width": new_w, "canvas_height": new_h}
             self.parameter_output_values["output_annotation_data"] = new_data
             self.publish_update_to_parameter("output_annotation_data", new_data)
 
@@ -170,6 +173,8 @@ class AnnotateImage(DataNode):
             data = self.get_parameter_value("output_annotation_data") or _default_annotation_data()
             if not isinstance(data, dict):
                 data = _default_annotation_data()
+            if imported == data.get("imported_annotations") and imported_layers == data.get("imported_layers"):
+                return super().after_value_set(parameter, value)
             new_data = {**data, "imported_annotations": imported, "imported_layers": imported_layers}
             self.parameter_output_values["output_annotation_data"] = new_data
             self.publish_update_to_parameter("output_annotation_data", new_data)
