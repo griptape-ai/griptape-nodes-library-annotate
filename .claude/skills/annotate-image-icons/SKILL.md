@@ -54,6 +54,7 @@ Returns an `<svg>` element with `display:block; flex-shrink:0; pointer-events:no
 | `pressure` | Pressure-sensitive stroke toggle |
 | `expand` | Expand to modal |
 | `contract` | Contract from modal |
+| `circle-help` | Keyboard shortcuts (?) button in header bar |
 | `align-left` | Text align left |
 | `align-center` | Text align center |
 | `align-right` | Text align right |
