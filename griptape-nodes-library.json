@@ -43,7 +43,10 @@
                     "arrows"
                 ],
                 "declarations": [
-                    { "type": "lifecycle_stage", "stage": "BETA" }
+                    {
+                        "type": "lifecycle_stage",
+                        "stage": "BETA"
+                    }
                 ]
             }
         },
@@ -65,7 +68,10 @@
                     "object detection"
                 ],
                 "declarations": [
-                    { "type": "lifecycle_stage", "stage": "BETA" }
+                    {
+                        "type": "lifecycle_stage",
+                        "stage": "BETA"
+                    }
                 ]
             }
         }
