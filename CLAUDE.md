@@ -29,6 +29,7 @@ Dependency management uses `uv`. Add Python packages to `pyproject.toml`, then r
 ## Skills — load these before working on:
 
 - `/griptape-node-dev` — creating or modifying a Python node
+- `/node-errors` — error messages, `NodeError`, and routing failures
 - `/griptape-nodes-widget-dev` — creating or modifying a JS widget
 - `/annotate-image-node` — understanding the AnnotateImage node architecture
 - `/annotate-image-icons` — adding icons to the widget
