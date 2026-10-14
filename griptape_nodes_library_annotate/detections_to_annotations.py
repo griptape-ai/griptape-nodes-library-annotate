@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -280,7 +280,7 @@ class DetectionsToAnnotations(DataNode):
         errors = []
         raw = self.get_parameter_value("detections")
         if raw is None:
-            errors.append(ValueError("'detections' is required. Connect an upstream detector's output to this input."))
+            errors.append(NodeError("'Detections' is required. Connect an upstream detector's output to it."))
         return errors
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:

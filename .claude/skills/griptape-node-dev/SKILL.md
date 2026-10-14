@@ -103,11 +103,12 @@ self.add_parameter(param)
 
 ```python
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from griptape_nodes.exe_types.core_types import NodeError
 from griptape_nodes.files.file import File
 
 image_artifact = self.parameter_values.get("image")
 if not isinstance(image_artifact, (ImageArtifact, ImageUrlArtifact)):
-    raise ValueError("image is required")
+    raise NodeError("Connect an image to 'Image'.")
 if isinstance(image_artifact, ImageUrlArtifact):
     image_bytes = File(image_artifact.value).read_bytes()
 else:
@@ -188,9 +189,11 @@ def after_value_set(self, parameter: Parameter, value: Any) -> None:
 def validate_before_node_run(self) -> list[Exception] | None:
     errors = []
     if not self.parameter_values.get("required_input"):
-        errors.append(ValueError("required_input is required"))
+        errors.append(NodeError("'Required Input' is empty. Enter a value."))
     return errors if errors else None
 ```
+
+Return one `NodeError` per problem, so the editor lists each on its own line.
 
 ### Helper Methods
 
@@ -227,6 +230,10 @@ class MyNode(SuccessFailureNode):
             self._handle_failure_exception(e)
 ```
 
+Every failure path needs `_handle_failure_exception`, including failures you detect yourself, not only caught exceptions. It follows the **Failed** output if one is connected and raises otherwise. Setting the status and returning leaves a node that ends quietly, with nothing in the error panel, when **Failed** isn't connected. Call it after `_set_status_results`, `return` after it, and don't `raise` again. Never raise from `after_value_set`, button callbacks, or previews.
+
+For error messages and `NodeError`, see the `node-errors` skill.
+
 > `_create_status_parameters()` **must be the last call** in `__init__` — it places the status outputs after all other parameters in the UI. Calling it mid-`__init__` pushes status before other outputs.
 
 ---
@@ -255,11 +262,17 @@ class InferenceNode(SuccessFailureNode):
 ## Secrets
 
 ```python
+from urllib.parse import quote
+
+from griptape_nodes.exe_types.core_types import NodeError, NodeErrorLink
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 api_key = GriptapeNodes.SecretsManager().get_secret("MY_API_KEY")
 if not api_key:
-    raise ValueError("MY_API_KEY is not configured")
+    raise NodeError(
+        "MY_API_KEY is not set. Add it in Settings → API Keys & Secrets, then run the node again.",
+        links=[NodeErrorLink(label="Add the API key", url=f"#settings-secrets?filter={quote('MY_API_KEY')}")],
+    )
 ```
 
 Never hardcode secrets. Register secret names in `griptape-nodes-library.json` under `settings[].contents.secrets_to_register`.
